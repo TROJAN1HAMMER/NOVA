@@ -1,0 +1,87 @@
+{{- if .Values.monitoring.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "kavach.fullname" . }}
+  labels:
+    {{- include "kavach.labels" . | nindent 4 }}
+    {{- with .Values.monitoring.serviceMonitor.extraLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: kavach.rules
+      rules:
+        - alert: KavachAPIHighErrorRate
+          expr: >
+            sum(rate(kavach_http_requests_total{status=~"5.."}[5m]))
+            /
+            sum(rate(kavach_http_requests_total[5m])) > 0.05
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "KAVACH API 5xx error rate above 5%"
+            description: "More than 5% of API requests have returned a 5xx status over the last 5 minutes."
+
+        - alert: KavachAPIHighLatency
+          expr: >
+            histogram_quantile(0.95, sum(rate(kavach_http_request_duration_seconds_bucket[5m])) by (le)) > 2
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "KAVACH API p95 latency above 2s"
+            description: "95th percentile HTTP request duration has exceeded 2 seconds for 10 minutes."
+
+        - alert: KavachAPIPodDown
+          expr: kube_deployment_status_replicas_available{deployment=~".*kavach.*api.*"} == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "No KAVACH API pods available"
+            description: "The KAVACH API Deployment has zero available replicas."
+
+        - alert: KavachScanJobBacklog
+          expr: kavach_scan_jobs_by_status{status="queued"} > 50
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "KAVACH scan job queue backlog"
+            description: "More than 50 scan jobs have been queued for over 15 minutes — worker capacity may need scaling."
+
+        - alert: KavachScannerFailureRateHigh
+          expr: >
+            sum(kavach_scanner_runs{outcome="failure"}) by (scanner)
+            /
+            (sum(kavach_scanner_runs{outcome="failure"}) by (scanner) + sum(kavach_scanner_runs{outcome="success"}) by (scanner)) > 0.5
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "KAVACH scanner {{`{{ $labels.scanner }}`}} failing over 50% of runs"
+            description: "The {{`{{ $labels.scanner }}`}} scanner has failed more than half its runs over a 30-minute window — check whether the tool is installed/reachable in the worker image."
+
+        - alert: KavachPersistentVolumeAlmostFull
+          expr: >
+            kubelet_volume_stats_available_bytes{persistentvolumeclaim=~".*kavach.*"}
+            /
+            kubelet_volume_stats_capacity_bytes{persistentvolumeclaim=~".*kavach.*"} < 0.1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "KAVACH PersistentVolumeClaim {{`{{ $labels.persistentvolumeclaim }}`}} almost full"
+            description: "Less than 10% free space remaining."
+
+        - alert: KavachCeleryBeatDown
+          expr: kube_deployment_status_replicas_available{deployment=~".*kavach.*beat.*"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "KAVACH Celery beat scheduler is down"
+            description: "No periodic tasks (stalled-job sweep, nightly scans) will fire while beat is down — it must run as exactly one replica, so this always means it's fully down, never just partially degraded."
+{{- end }}

@@ -1,0 +1,75 @@
+{{- if .Values.monitoring.celeryExporter.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kavach.fullname" . }}-celery-exporter
+  labels:
+    {{- include "kavach.labels" . | nindent 4 }}
+    app.kubernetes.io/component: celery-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "kavach.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: celery-exporter
+  template:
+    metadata:
+      labels:
+        {{- include "kavach.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: celery-exporter
+    spec:
+      containers:
+        - name: celery-exporter
+          image: "{{ .Values.monitoring.celeryExporter.image.repository }}:{{ .Values.monitoring.celeryExporter.image.tag }}"
+          imagePullPolicy: {{ .Values.monitoring.celeryExporter.image.pullPolicy }}
+          args:
+            - "--broker-url=redis://{{ include "kavach.redisHost" . }}:6379/0"
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.monitoring.celeryExporter.service.port }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: metrics
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.monitoring.celeryExporter.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kavach.fullname" . }}-celery-exporter
+  labels:
+    {{- include "kavach.labels" . | nindent 4 }}
+    app.kubernetes.io/component: celery-exporter
+spec:
+  selector:
+    {{- include "kavach.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: celery-exporter
+  ports:
+    - name: metrics
+      port: {{ .Values.monitoring.celeryExporter.service.port }}
+      targetPort: metrics
+---
+{{- if .Values.monitoring.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "kavach.fullname" . }}-celery-exporter
+  labels:
+    {{- include "kavach.labels" . | nindent 4 }}
+    {{- with .Values.monitoring.serviceMonitor.extraLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "kavach.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: celery-exporter
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.monitoring.serviceMonitor.interval }}
+{{- end }}
+{{- end }}

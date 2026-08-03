@@ -1,0 +1,12 @@
+# Patterns to ignore when building packages.
+# NOTE: do NOT add a bare "tests/" pattern here — it would also match
+# templates/tests/, which is the actual `helm test` hook, not something
+# to exclude from the packaged chart.
+.git/
+.gitignore
+*.swp
+*.bak
+*.tmp
+*.orig
+.DS_Store
+.vscode/

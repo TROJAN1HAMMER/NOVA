@@ -1,0 +1,82 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: nova-postgres
+    environment:
+      POSTGRES_USER: nova
+      POSTGRES_PASSWORD: nova_secret
+      POSTGRES_DB: nova_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - nova_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nova -d nova_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: nova-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: nova-backend
+    environment:
+      DATABASE_URL: postgresql+asyncpg://nova:nova_secret@postgres:5432/nova_db
+      REDIS_URL: redis://redis:6379/0
+      PROJECT_NAME: "NOVA"
+      ENVIRONMENT: "production"
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend/uploads:/app/uploads
+      - ./backend/reports:/app/reports
+      - ./backend/data/knowledge_base:/app/data/knowledge_base
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: http://localhost:8000/api/v1
+    container_name: nova-frontend
+    ports:
+      - "5173:8080"
+    depends_on:
+      - backend
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: nova-worker
+    environment:
+      DATABASE_URL: postgresql+asyncpg://nova:nova_secret@postgres:5432/nova_db
+      REDIS_URL: redis://redis:6379/0
+    command: celery -A celery_worker.celery_app worker --loglevel=info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  nova_postgres_data:

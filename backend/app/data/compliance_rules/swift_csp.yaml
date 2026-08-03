@@ -1,0 +1,133 @@
+# KAVACH Compliance Engine — SWIFT Customer Security Programme rule catalog
+#
+# Illustrative mapping for a DevSecOps demo/education platform, not a
+# certified SWIFT CSP attestation mapping. Control numbers follow the
+# same references app/data/compliance_mappings.json already used
+# elsewhere in this codebase.
+
+framework:
+  name: "SWIFT Customer Security Programme"
+  short_code: "swift_csp"
+  version: "2024"
+  description: "SWIFT Customer Security Controls Framework"
+
+controls:
+  - requirement_id: "1.1"
+    title: "SWIFT Environment Protection"
+    description: >
+      The SWIFT-related components are protected from a general-purpose
+      IT environment via secure configuration and network segmentation,
+      including hardened deployment configurations.
+    trigger:
+      categories: [security_misconfiguration]
+      min_severity: MEDIUM
+    recommendation: >
+      Segment SWIFT-related infrastructure from the general network,
+      apply hardened baseline configurations, and disable unnecessary
+      services on all components in scope.
+
+  - requirement_id: "2.6"
+    title: "Cryptographic Controls"
+    description: >
+      Cryptography is used to protect the confidentiality and integrity
+      of SWIFT-related data at rest and in transit, using only approved,
+      unbroken algorithms and secure key/random generation.
+    trigger:
+      categories: [weak_cryptography, insecure_random]
+      min_severity: LOW
+    recommendation: >
+      Replace deprecated hash/cipher algorithms (MD5, SHA-1, DES, RC4)
+      with modern equivalents, and use cryptographically secure random
+      generation for all tokens and keys.
+
+  - requirement_id: "2.7"
+    title: "Vulnerability Scanning & System Hardening"
+    description: >
+      Operators perform regular vulnerability scanning of the SWIFT
+      environment and maintain hardened, patched system configurations.
+    trigger:
+      categories: [security_misconfiguration, vulnerable_dependency]
+      min_severity: LOW
+    recommendation: >
+      Run automated vulnerability and configuration scans on every
+      deployment, and remediate findings against a defined SLA before
+      production release.
+
+  - requirement_id: "3.1"
+    title: "Software Integrity — Unsafe Deserialization Protection"
+    description: >
+      Systems processing SWIFT-related data validate the integrity of any
+      serialized data before deserializing it, preventing arbitrary code
+      execution via crafted payloads.
+    trigger:
+      categories: [unsafe_deserialization]
+      min_severity: LOW
+    recommendation: >
+      Never deserialize untrusted data with pickle or equivalent unsafe
+      mechanisms; use JSON or a schema-validated format with integrity
+      checks (HMAC) instead.
+
+  - requirement_id: "3.2"
+    title: "Malware & Injection Protection"
+    description: >
+      Technical controls prevent common injection and command-execution
+      attack techniques against systems in the SWIFT-related environment.
+    trigger:
+      categories: [sql_injection, command_injection, path_traversal]
+      min_severity: LOW
+    recommendation: >
+      Use parameterized queries for all database access, avoid shell=True
+      in subprocess calls, and validate/canonicalize all file-path input.
+
+  - requirement_id: "4.1"
+    title: "Password Policy"
+    description: >
+      Passwords and other authentication credentials for SWIFT-related
+      systems meet defined strength requirements and are never stored or
+      transmitted in plaintext.
+    trigger:
+      categories: [hardcoded_secret]
+      min_severity: LOW
+    recommendation: >
+      Remove hardcoded passwords/credentials from source code, rotate
+      exposed values, and enforce a secrets-manager-only policy for
+      credential storage.
+
+  - requirement_id: "6.1"
+    title: "Operator Session Security"
+    description: >
+      Operator sessions and the credentials/tokens used to establish them
+      are protected against disclosure and unauthorized reuse.
+    trigger:
+      categories: [hardcoded_secret]
+      keywords: [token, session, jwt]
+      min_severity: LOW
+    recommendation: >
+      Ensure session tokens are generated with a cryptographically secure
+      random source, never logged or hardcoded, and expire on a defined
+      timeout.
+
+  - requirement_id: "7.1"
+    title: "Vulnerability Scanning (Dependencies)"
+    description: >
+      Third-party software components used within the SWIFT-related
+      environment are scanned for known vulnerabilities on an ongoing
+      basis.
+    trigger:
+      categories: [vulnerable_dependency]
+      min_severity: LOW
+    recommendation: >
+      Integrate dependency scanning (pip-audit, OSV) into the CI/CD
+      pipeline and block releases with unpatched Critical/High CVEs.
+
+  - requirement_id: "7.3"
+    title: "Patch Management"
+    description: >
+      A formal patch management process ensures known vulnerabilities in
+      third-party components are remediated within a defined timeframe.
+    trigger:
+      categories: [vulnerable_dependency]
+      min_severity: MEDIUM
+    recommendation: >
+      Define patch SLAs by severity (e.g. Critical within 7 days, High
+      within 30 days) and track compliance against them per release.

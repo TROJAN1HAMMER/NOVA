@@ -1,0 +1,62 @@
+{
+  "hardcoded_secret": {
+    "rbi": "RBI IT Framework 2021 — Section 4.2: Access Control & Identity Management; Annex II: Sensitive Data Protection",
+    "pci": "PCI DSS v4.0 — Requirement 8.2: Protect credentials; Requirement 3.4: Render PAN unreadable",
+    "swift": "SWIFT CSP Control 4.1: Password Policy; Control 6.1: Operator Session Security",
+    "notes": "Hardcoded secrets represent an immediate breach risk. All credentials must be stored in secrets management solutions such as HashiCorp Vault or AWS Secrets Manager."
+  },
+  "sql_injection": {
+    "rbi": "RBI IT Framework 2021 — Section 6.4: Application Security; Clause 7.1: Secure Coding Standards",
+    "pci": "PCI DSS v4.0 — Requirement 6.2: Bespoke and custom software; Requirement 6.3.1: Security vulnerabilities",
+    "swift": "SWIFT CSP Control 3.2: Malware Protection; Control 7.2: Software Integrity",
+    "notes": "SQL Injection is in OWASP Top 10 (A03:2021). Banking applications must use parameterized queries or ORM frameworks exclusively."
+  },
+  "command_injection": {
+    "rbi": "RBI IT Framework 2021 — Section 6.4: Application Security; Clause 7.1: Secure Coding Standards",
+    "pci": "PCI DSS v4.0 — Requirement 6.2.4: Common attacks; Requirement 6.3.1: Vulnerabilities",
+    "swift": "SWIFT CSP Control 7.2: Software Integrity; Control 3.2: Malware Protection",
+    "notes": "Command injection allows attackers to execute arbitrary OS commands. Banking APIs must never pass user input to system calls."
+  },
+  "weak_cryptography": {
+    "rbi": "RBI IT Framework 2021 — Section 5.3: Cryptography Policy; Annex IV: Encryption Standards",
+    "pci": "PCI DSS v4.0 — Requirement 4.2.1: Strong cryptography; Requirement 3.5: Use strong cryptography",
+    "swift": "SWIFT CSP Control 2.6: Cryptographic Controls; Control 4.2: Data Encryption",
+    "notes": "MD5, SHA-1, DES, RC4 are cryptographically broken. RBI mandates AES-256 for data at rest and TLS 1.2+ for data in transit."
+  },
+  "unsafe_deserialization": {
+    "rbi": "RBI IT Framework 2021 — Section 6.4: Application Security; Clause 6.5: Input Validation",
+    "pci": "PCI DSS v4.0 — Requirement 6.2.4: Attacks on data integrity; Requirement 6.3.3: All components protected",
+    "swift": "SWIFT CSP Control 7.2: Software Integrity; Control 3.1: Malware Protection",
+    "notes": "Unsafe deserialization (OWASP A08:2021) can lead to Remote Code Execution. Never deserialize untrusted data with pickle, YAML load, or Java ObjectInputStream."
+  },
+  "security_misconfiguration": {
+    "rbi": "RBI IT Framework 2021 — Section 4.4: Security Configuration Management; Clause 8.1: Environment Hardening",
+    "pci": "PCI DSS v4.0 — Requirement 2.2: System components configured and managed; Requirement 6.2: Secure configurations",
+    "swift": "SWIFT CSP Control 2.7: System Hardening; Control 1.1: Environment Security",
+    "notes": "Security misconfigurations are the most prevalent finding class (OWASP A05:2021). Banking systems must follow CIS benchmarks and vendor hardening guides."
+  },
+  "vulnerable_dependency": {
+    "rbi": "RBI IT Framework 2021 — Section 6.6: Patch and Vulnerability Management; Clause 6.7: Third-party Risk",
+    "pci": "PCI DSS v4.0 — Requirement 6.3.3: All system components protected from known vulnerabilities; Requirement 12.8: Third-party service providers",
+    "swift": "SWIFT CSP Control 7.1: Vulnerability Scanning; Control 7.3: Patch Management",
+    "notes": "Software Composition Analysis (SCA) is mandatory. All third-party libraries must be tracked in an SBOM and patched within SLA timelines defined by RBI."
+  },
+  "path_traversal": {
+    "rbi": "RBI IT Framework 2021 — Section 6.4: Application Security; Clause 6.5: Input Validation",
+    "pci": "PCI DSS v4.0 — Requirement 6.2.4: Common vulnerability attacks; Requirement 6.3.1",
+    "swift": "SWIFT CSP Control 3.2: Malware Protection; Control 7.2: Software Integrity",
+    "notes": "Path traversal allows attackers to access files outside the intended directory. Banking document systems are especially at risk."
+  },
+  "insecure_random": {
+    "rbi": "RBI IT Framework 2021 — Section 5.3: Cryptography Policy; Annex IV: Random Number Generation",
+    "pci": "PCI DSS v4.0 — Requirement 3.5: Cryptographic key generation; Requirement 4.2.1: Strong cryptography",
+    "swift": "SWIFT CSP Control 2.6: Cryptographic Controls",
+    "notes": "Non-cryptographic random number generators must not be used for session tokens, OTPs, or cryptographic keys in banking systems."
+  },
+  "unknown": {
+    "rbi": "RBI IT Framework 2021 — Section 6.4: Application Security (General)",
+    "pci": "PCI DSS v4.0 — Requirement 6.2: Software security (General)",
+    "swift": "SWIFT CSP Control 7.2: Software Integrity (General)",
+    "notes": "Review finding manually and map to applicable regulatory controls."
+  }
+}

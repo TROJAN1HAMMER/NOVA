@@ -1,0 +1,438 @@
+# KAVACH Helm chart — default values.
+# Override with -f my-values.yaml or --set key=value per environment.
+
+global:
+  # Set to override the namespace Helm installs into (defaults to the
+  # release namespace, i.e. whatever `-n` / `--namespace` you pass to
+  # `helm install`). Left here mainly so sub-resources can share one
+  # source of truth if you ever split this into subcharts.
+  imageRegistry: ""
+  imagePullSecrets: []
+
+# ── Backend API (FastAPI) ──────────────────────────────────────────────────────
+api:
+  image:
+    repository: kavach-backend
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 2
+  service:
+    type: ClusterIP
+    port: 8000
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  probes:
+    # Matches app/main.py's /health/live (no dependency checks — a DB/Redis
+    # outage must not cause kubelet to kill and restart API pods) and
+    # /health/ready (actually checks Postgres+Redis — pulled out of Service
+    # load-balancing until they're reachable again, without a restart).
+    liveness:
+      path: /health/live
+      initialDelaySeconds: 10
+      periodSeconds: 15
+      timeoutSeconds: 5
+      failureThreshold: 3
+    readiness:
+      path: /health/ready
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 3
+
+# ── Frontend (React/Vite, served by nginx) — optional ──────────────────────────
+frontend:
+  enabled: true
+  image:
+    repository: kavach-frontend
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 2
+  service:
+    type: ClusterIP
+    port: 8080
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+# ── Celery workers ──────────────────────────────────────────────────────────────
+# Split into two pools, matching docker-compose.yml's design: a small,
+# always-on pool dedicated to kavach.critical/high so a backlog of
+# low-priority scans can never starve them, and a bulk-throughput pool for
+# kavach.normal/low that's the actual horizontal-scaling target.
+workers:
+  image:
+    repository: kavach-backend
+    tag: latest
+    pullPolicy: IfNotPresent
+  critical:
+    replicaCount: 2
+    concurrency: 4
+    queues: "kavach.critical,kavach.high"
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: "2"
+        memory: 2Gi
+    # Deliberately no autoscaling block here — this pool's whole point is
+    # guaranteed, always-on capacity, not elastic scale.
+  default:
+    replicaCount: 3
+    concurrency: 8
+    queues: "kavach.normal,kavach.low"
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: "2"
+        memory: 2Gi
+    autoscaling:
+      enabled: true
+      minReplicas: 3
+      maxReplicas: 30
+      # CPU-based scaling is a rough proxy for queue depth — good enough
+      # without also standing up a Prometheus adapter + KEDA/custom-
+      # metrics just for this chart. Swap to a queue-length-based HPA
+      # (e.g. KEDA's Redis scaler against kavach.normal/kavach.low list
+      # length) if truer autoscaling is worth the extra infra.
+      targetCPUUtilizationPercentage: 75
+
+# ── Celery beat (scheduler) ─────────────────────────────────────────────────────
+beat:
+  image:
+    repository: kavach-backend
+    tag: latest
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 250m
+      memory: 512Mi
+  # replicaCount is deliberately not configurable here — Celery Beat must
+  # never run more than one instance at a time (duplicate schedules would
+  # fire the periodic stalled-job sweep multiple times concurrently). The
+  # Deployment template hardcodes replicas: 1 and strategy: Recreate.
+
+# ── Flower (Celery monitoring UI) — optional ────────────────────────────────────
+flower:
+  enabled: true
+  image:
+    repository: mher/flower
+    tag: "2.0"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 5555
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+# ── Postgres ─────────────────────────────────────────────────────────────────────
+postgres:
+  # Set to false and point `config.databaseUrl` (via an existing Secret,
+  # see `secrets.existingSecret`) at a managed database (RDS, Cloud SQL,
+  # ...) instead of running Postgres in-cluster.
+  enabled: true
+  image:
+    repository: postgres
+    tag: "16-alpine"
+    pullPolicy: IfNotPresent
+  auth:
+    username: kavach
+    database: kavach_db
+    # password: see secrets section — never set a real password here.
+  persistence:
+    enabled: true
+    size: 20Gi
+    storageClassName: ""  # "" = cluster default StorageClass
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+# ── Redis ────────────────────────────────────────────────────────────────────────
+redis:
+  enabled: true
+  image:
+    repository: redis
+    tag: "7-alpine"
+    pullPolicy: IfNotPresent
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClassName: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# ── Shared storage (uploads/reports) ────────────────────────────────────────────
+# Both the api pod (receives an uploaded repo zip / writes a generated
+# report) and worker pods (scan the zip / render the report) need to see
+# the SAME files, and they are always different pods — this requires a
+# ReadWriteMany-capable StorageClass (NFS, EFS, Azure Files, Filestore,
+# CephFS, ...). A plain cloud-disk StorageClass (EBS gp3, GCE PD, Azure
+# managed disk) is ReadWriteOnce and will NOT work here.
+storage:
+  uploads:
+    size: 10Gi
+    storageClassName: ""  # must support ReadWriteMany
+  reports:
+    # If report_storage_backend=s3 (see config.reportStorageBackend below),
+    # reports are uploaded to S3/MinIO immediately after generation and
+    # served via presigned URL — this PVC then only needs to hold a file
+    # for the few seconds between rendering and upload, so `emptyDir: true`
+    # is fine and avoids needing an RWX StorageClass at all. Set
+    # `emptyDir: false` (and provide an RWX storageClassName) only if
+    # report_storage_backend stays "local".
+    emptyDir: true
+    size: 10Gi
+    storageClassName: ""
+
+# ── Ingress ──────────────────────────────────────────────────────────────────────
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: 200m  # repo zip uploads can be large
+  host: kavach.example.com
+  tls:
+    enabled: true
+    secretName: kavach-tls
+  # Frontend served at "/", API at "/api" — matches the existing
+  # VITE_API_URL default of "/api/v1" (see frontend/src/lib/api.ts) when
+  # this Ingress fronts both under one host.
+  apiPath: /api
+  frontendPath: /
+
+networkPolicy:
+  enabled: false  # opt-in — restricts Postgres/Redis ingress to only this release's own pods
+
+# ── Application configuration ───────────────────────────────────────────────────
+# Split into `config` (non-secret — becomes a ConfigMap) and `secrets`
+# (sensitive — becomes a Secret, or point secrets.existingSecret at one you
+# manage outside this chart, e.g. via External Secrets Operator or Sealed
+# Secrets, which is what a real CI/CD pipeline should do rather than
+# putting plaintext secrets in a values file committed to git).
+config:
+  appEnv: production
+  debug: false
+
+  # AI provider abstraction — see app/services/ai/gateway.py. Leaving all
+  # provider keys blank (in `secrets`, not here) means every AI-powered
+  # explanation/summary function falls back to its deterministic template.
+  aiMode: hybrid
+  aiProviderPriority: auto
+  anthropicModel: claude-sonnet-5
+  openaiModel: gpt-4o-mini
+  geminiModel: gemini-1.5-flash
+  ollamaBaseUrl: ""
+  ollamaModel: ""
+  vllmBaseUrl: ""
+  vllmModel: ""
+
+  # Report storage — see storage.reports above for how this interacts
+  # with the reports PVC/emptyDir choice.
+  reportStorageBackend: local  # local | s3
+  s3Endpoint: ""  # blank = real AWS S3; set for MinIO, e.g. http://minio:9000
+  s3Bucket: kavach-reports
+  s3Region: us-east-1
+  s3UsePathStyle: true
+
+  jwtAlgorithm: HS256
+  accessTokenExpireMinutes: 30
+  refreshTokenExpireDays: 7
+
+  oauth2Enabled: false
+  oauth2AuthorizeUrl: ""
+  oauth2TokenUrl: ""
+  oauth2UserinfoUrl: ""
+  oauth2RedirectUri: ""
+  oauth2Scope: "openid email profile"
+
+  ldapEnabled: false
+  ldapServerUrl: ""
+  ldapUserSearchBase: ""
+  ldapUserSearchFilter: "(uid={username})"
+  ldapEmailAttribute: mail
+  ldapFullNameAttribute: cn
+  ldapUseSsl: false
+
+  samlEnabled: false
+  samlIdpMetadataUrl: ""
+  samlIdpEntityId: ""
+  samlSpEntityId: kavach
+  samlAcsUrl: ""
+
+  allowedOrigins: "https://kavach.example.com"
+
+  # OpenTelemetry — every OTel SDK reads this env var natively (see
+  # app/core/telemetry.py); left blank, tracing instrumentation stays
+  # active (so trace_id/span_id still appear in logs) but nothing is
+  # exported anywhere. Point it at an in-cluster OTel Collector/Tempo/
+  # Jaeger's OTLP gRPC endpoint, e.g. "http://otel-collector:4317".
+  otelExporterOtlpEndpoint: ""
+
+  notificationsEnabled: false
+  notifyMinSeverity: CRITICAL
+  emailSmtpHost: ""
+  emailSmtpPort: 587
+  emailSmtpUseTls: true
+  emailFromAddress: "kavach@example.com"
+  # List of recipient addresses. Joined into a comma-separated string for
+  # the app's EMAIL_TO_ADDRESSES env var (smtplib sends one message to all
+  # of them), but ranged over individually for AlertmanagerConfig, whose
+  # EmailConfig.to field only accepts a single address per entry.
+  emailToAddresses: []
+
+  # Inbound GitHub webhook (app/api/v1/endpoints/webhooks.py) — the
+  # secret itself lives in `secrets.githubWebhookSecret` below; this just
+  # toggles whether pushes to non-default branches also trigger a scan.
+  githubWebhookScanAllBranches: true
+
+  # Archive sweep (app/tasks/archive_tasks.py, nightly at 03:00 UTC) — how
+  # long a terminal scan job's report *files* are kept before being
+  # reclaimed. Scan/finding/BRS/compliance database history is never
+  # deleted, only the heavier rendered artifacts.
+  archiveAfterDays: 90
+
+secrets:
+  # If set, this chart creates no Secret of its own and every workload
+  # reads from the named Secret instead — point this at whatever your
+  # CI/CD or secrets manager already maintains. All the keys the chart
+  # expects are documented in templates/secret.yaml's comments.
+  existingSecret: ""
+
+  # Only used to render templates/secret.yaml when existingSecret is
+  # blank. Fine for `helm install` on a first try; replace with
+  # --set-string or a separate untracked values file for anything real —
+  # never commit real values here.
+  appSecretKey: "change-me-32-chars-minimum-please"
+  jwtSecretKey: "change-me-jwt-32chars-minimum-please"
+  postgresPassword: "change-me"
+  s3AccessKeyId: ""
+  s3SecretAccessKey: ""
+  nvdApiKey: ""
+  anthropicApiKey: ""
+  openaiApiKey: ""
+  geminiApiKey: ""
+  oauth2ClientId: ""
+  oauth2ClientSecret: ""
+  ldapBindDn: ""
+  ldapBindPassword: ""
+
+  # Notification channels (app/services/notifications/) — and reused by
+  # monitoring.alertmanagerConfig's Slack/email/webhook receivers, so
+  # infra alerts and KAVACH's own scan-result notifications can share one
+  # configured destination instead of asking for the same channel twice.
+  slackWebhookUrl: ""
+  emailSmtpUsername: ""
+  emailSmtpPassword: ""
+  webhookUrl: ""
+  webhookSecret: ""
+
+  # Verifies GitHub's `X-Hub-Signature-256` header on every inbound
+  # webhook delivery (app/api/v1/endpoints/webhooks.py) — must match the
+  # secret configured on the GitHub repo/org's webhook settings page.
+  # Blank means the endpoint refuses every delivery with 503 rather than
+  # accepting unsigned payloads.
+  githubWebhookSecret: ""
+
+# ── Database migrations ─────────────────────────────────────────────────────────
+migration:
+  # Runs `alembic upgrade head` as a Helm pre-install/pre-upgrade hook Job,
+  # before any api/worker pod that expects the new schema starts rolling
+  # out.
+  enabled: true
+  backoffLimit: 3
+
+# ── Observability ────────────────────────────────────────────────────────────────
+# Assumes a kube-prometheus-stack (or equivalent Prometheus Operator +
+# Alertmanager) is already installed cluster-wide — this chart doesn't
+# bundle Prometheus/Grafana/Alertmanager itself, it only ever emits the
+# CRDs (ServiceMonitor/PrometheusRule/AlertmanagerConfig) and ConfigMaps
+# that integrate with one already running, the same way any other
+# production Helm chart does. Every toggle below defaults to false
+# specifically so installing this chart against a cluster *without* that
+# stack still works with zero errors (Helm would fail outright trying to
+# create a CRD-backed resource whose CRD doesn't exist).
+monitoring:
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    # Prometheus Operator only picks up ServiceMonitors matching its own
+    # Prometheus CR's `serviceMonitorSelector` — that's almost always a
+    # label match (commonly `release: <prometheus-helm-release-name>`),
+    # which varies per cluster, hence exposed as free-form extra labels
+    # here rather than guessed.
+    extraLabels: {}
+  celeryExporter:
+    # danihodovic/celery-exporter — listens to Celery's own event stream
+    # (zero KAVACH code involved) and exposes generic task-queue metrics
+    # (queue depth, task states/counts, worker presence) that complement
+    # KAVACH's own custom /metrics business + per-scanner metrics.
+    enabled: false
+    image:
+      repository: danihodovic/celery-exporter
+      tag: latest
+      pullPolicy: IfNotPresent
+    service:
+      port: 9808
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 250m
+        memory: 128Mi
+  prometheusRule:
+    enabled: false
+  alertmanagerConfig:
+    # Requires monitoring.prometheusRule.enabled (routes only make sense
+    # alongside the alerts they route) and the cluster's Alertmanager
+    # configured to watch AlertmanagerConfig objects across namespaces
+    # (kube-prometheus-stack's `alertmanagerSpec.alertmanagerConfigSelector`
+    # — an empty selector, or one matching this object's labels).
+    enabled: false
+  grafanaDashboards:
+    # ConfigMaps labeled for a Grafana sidecar's dashboard auto-discovery
+    # (the standard convention: `grafana_dashboard: "1"`, watched by
+    # grafana/grafana's `sidecar.dashboards.enabled` or
+    # kube-prometheus-stack's bundled Grafana, which enables that sidecar
+    # by default).
+    enabled: false
+    label: grafana_dashboard
+    labelValue: "1"

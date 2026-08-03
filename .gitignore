@@ -1,0 +1,102 @@
+# ==========================================
+# NOVA (Neural Orchestrated Vector Assistant)
+# Production Git Ignore Rule Set
+# ==========================================
+
+# ------------------------------------------
+# Environment & Secrets
+# ------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.cert
+
+# ------------------------------------------
+# Python & Bytecode
+# ------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+.pytest_cache/
+.coverage
+htmlcov/
+.nox/
+.hypothesis/
+*.manifest
+*.spec
+
+# ------------------------------------------
+# Node.js & Frontend Build Outputs
+# ------------------------------------------
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+build/
+frontend/build/
+.vite/
+frontend/.vite/
+.eslintcache
+.stylelintcache
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ------------------------------------------
+# Local Storage, Vector DB & User Artifacts
+# ------------------------------------------
+backend/data/knowledge_base/*
+!backend/data/knowledge_base/.gitkeep
+backend/data/db/*
+!backend/data/db/.gitkeep
+backend/uploads/*
+!backend/uploads/.gitkeep
+backend/reports/*
+!backend/reports/.gitkeep
+*.db
+*.sqlite
+*.sqlite3
+
+# ------------------------------------------
+# IDEs, Editors & OS Files
+# ------------------------------------------
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+*.swp
+*.swo
+*~
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ------------------------------------------
+# Temporary & Log Artifacts
+# ------------------------------------------
+*.tmp
+*.bak
+*.swp
+*.log
+debug.log
+migration_summary.md
+verification_audit.md
+KAVACH_Progress*.pdf

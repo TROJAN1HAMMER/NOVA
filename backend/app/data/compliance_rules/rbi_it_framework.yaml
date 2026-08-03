@@ -1,0 +1,138 @@
+# KAVACH Compliance Engine — RBI IT Framework for banks (2021) rule catalog
+#
+# Illustrative mapping for a DevSecOps demo/education platform, not a
+# certified regulatory audit mapping. Section numbers follow the same
+# structure app/data/compliance_mappings.json already used elsewhere in
+# this codebase, restructured here into a proper control catalog with
+# pass/fail evaluation instead of flat lookup strings.
+
+framework:
+  name: "RBI IT Framework 2021"
+  short_code: "rbi_it_framework"
+  version: "2021"
+  description: "Reserve Bank of India — Information Technology Framework for the Banking Sector"
+
+controls:
+  - requirement_id: "4.2"
+    title: "Access Control & Identity Management"
+    description: >
+      Banks shall implement strong access control and identity management
+      practices, ensuring credentials and authentication factors are never
+      exposed in source code, configuration, or version control.
+    trigger:
+      categories: [hardcoded_secret]
+      min_severity: LOW
+    recommendation: >
+      Remove all hardcoded credentials, rotate exposed secrets immediately,
+      and adopt a centralized secrets management solution with audit
+      logging of access.
+
+  - requirement_id: "4.4"
+    title: "Security Configuration Management"
+    description: >
+      Banks shall maintain secure baseline configurations for all IT
+      systems and applications, with documented hardening standards and
+      periodic configuration drift audits.
+    trigger:
+      categories: [security_misconfiguration]
+      min_severity: MEDIUM
+    recommendation: >
+      Adopt CIS/vendor hardening benchmarks as the configuration baseline,
+      disable debug modes and default credentials in production, and
+      audit configuration against the baseline on every deployment.
+
+  - requirement_id: "5.3"
+    title: "Cryptography Policy"
+    description: >
+      Banks shall define and enforce a cryptography policy mandating
+      approved algorithms and key/random-number generation standards for
+      all systems handling customer or transaction data.
+    trigger:
+      categories: [weak_cryptography, insecure_random]
+      min_severity: LOW
+    recommendation: >
+      Standardize on AES-256 for data at rest and TLS 1.2+ for data in
+      transit; use the `secrets` module (not `random`) for any
+      security-sensitive value generation.
+
+  - requirement_id: "6.4"
+    title: "Application Security — Secure Coding Standards"
+    description: >
+      Banks shall ensure all applications are developed following secure
+      coding standards addressing, at minimum, injection attacks and
+      unsafe deserialization.
+    trigger:
+      categories: [sql_injection, command_injection, unsafe_deserialization]
+      min_severity: LOW
+    recommendation: >
+      Mandate parameterized queries, safe deserialization libraries, and
+      static application security testing (SAST) as a merge gate in the
+      CI/CD pipeline.
+
+  - requirement_id: "6.5"
+    title: "Input Validation"
+    description: >
+      Applications shall validate and sanitize all external input before
+      use, including file paths, to prevent traversal and injection-class
+      vulnerabilities.
+    trigger:
+      categories: [path_traversal, unsafe_deserialization]
+      min_severity: LOW
+    recommendation: >
+      Canonicalize and validate all user-supplied file paths against an
+      allow-list of permitted directories, and reject any path containing
+      traversal sequences.
+
+  - requirement_id: "6.6"
+    title: "Patch and Vulnerability Management"
+    description: >
+      Banks shall maintain a formal vulnerability and patch management
+      program with defined remediation SLAs proportional to severity.
+    trigger:
+      categories: [vulnerable_dependency]
+      min_severity: LOW
+    recommendation: >
+      Run automated dependency scanning in CI/CD, subscribe to CVE/NVD
+      advisories for all third-party components, and enforce patch SLAs
+      aligned to CVSS severity.
+
+  - requirement_id: "6.7"
+    title: "Third-Party and Supply Chain Risk Management"
+    description: >
+      Banks shall assess and monitor the security risk introduced by
+      third-party software components and dependencies used in production
+      systems.
+    trigger:
+      categories: [vulnerable_dependency]
+      min_severity: LOW
+    recommendation: >
+      Maintain a Software Bill of Materials (SBOM) for every production
+      system and require vendor/library patch commitments as part of
+      onboarding.
+
+  - requirement_id: "Annex-II"
+    title: "Sensitive Data Protection"
+    description: >
+      Sensitive data, including credentials, PII, and transaction data,
+      shall never be stored in plaintext in source code, logs, or
+      configuration files.
+    trigger:
+      categories: [hardcoded_secret]
+      min_severity: LOW
+    recommendation: >
+      Audit source control history for previously committed sensitive
+      data and implement pre-commit hooks to block future occurrences.
+
+  - requirement_id: "Annex-IV"
+    title: "Encryption & Random Number Generation Standards"
+    description: >
+      Encryption and random-number-generation implementations shall use
+      only algorithms and libraries approved for banking use, excluding
+      deprecated or broken primitives.
+    trigger:
+      categories: [weak_cryptography, insecure_random]
+      min_severity: LOW
+    recommendation: >
+      Replace MD5/SHA-1/DES/RC4 with modern approved algorithms, and
+      review all cryptographic library usage against the bank's approved
+      algorithm list annually.

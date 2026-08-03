@@ -1,0 +1,125 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: nova
+      POSTGRES_PASSWORD: nova_secret
+      POSTGRES_DB: nova_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - nova_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nova -d nova_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://nova:nova_secret@postgres:5432/nova_db
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./uploads:/app/uploads
+      - ./reports:/app/reports
+      - ./data/knowledge_base:/app/data/knowledge_base
+
+  frontend:
+    build:
+      context: ../frontend
+      args:
+        VITE_API_URL: http://localhost:8000/api/v1
+    ports:
+      - "5173:8080"
+    depends_on:
+      - api
+
+  worker-critical:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://nova:nova_secret@postgres:5432/nova_db
+      REDIS_URL: redis://redis:6379/0
+    command: >
+      celery -A celery_worker.celery_app worker
+      --loglevel=info
+      --queues=nova.critical,nova.high
+      --concurrency=4
+      --hostname=critical@%h
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./uploads:/app/uploads
+      - ./reports:/app/reports
+
+  worker-default:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://nova:nova_secret@postgres:5432/nova_db
+      REDIS_URL: redis://redis:6379/0
+    command: >
+      celery -A celery_worker.celery_app worker
+      --loglevel=info
+      --queues=nova.normal,nova.low
+      --concurrency=8
+      --hostname=default@%h
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./uploads:/app/uploads
+      - ./reports:/app/reports
+      - ./data/knowledge_base:/app/data/knowledge_base
+
+  beat:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://nova:nova_secret@postgres:5432/nova_db
+      REDIS_URL: redis://redis:6379/0
+    command: celery -A celery_worker.celery_app beat --loglevel=info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  flower:
+    image: mher/flower:2.0
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+    ports:
+      - "5555:5555"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+volumes:
+  nova_postgres_data:

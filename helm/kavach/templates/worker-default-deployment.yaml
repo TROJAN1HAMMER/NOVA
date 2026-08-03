@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kavach.fullname" . }}-worker-default
+  labels:
+    {{- include "kavach.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker-default
+spec:
+  {{- if not .Values.workers.default.autoscaling.enabled }}
+  replicas: {{ .Values.workers.default.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "kavach.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker-default
+  template:
+    metadata:
+      labels:
+        {{- include "kavach.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: worker-default
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: worker-default
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.workers.image.repository }}:{{ .Values.workers.image.tag }}"
+          imagePullPolicy: {{ .Values.workers.image.pullPolicy }}
+          command:
+            - celery
+            - -A
+            - celery_worker.celery_app
+            - worker
+            - --loglevel=info
+            - --queues={{ .Values.workers.default.queues }}
+            - --concurrency={{ .Values.workers.default.concurrency }}
+            - --hostname=default@%h
+          envFrom:
+            {{- include "kavach.envFrom" . | nindent 12 }}
+          volumeMounts:
+            {{- include "kavach.sharedVolumeMounts" . | nindent 12 }}
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - "celery -A celery_worker.celery_app inspect ping --destination=default@$(hostname) --timeout=10 | grep -q OK"
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 15
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.workers.default.resources | nindent 12 }}
+      volumes:
+        {{- include "kavach.sharedVolumes" . | nindent 8 }}

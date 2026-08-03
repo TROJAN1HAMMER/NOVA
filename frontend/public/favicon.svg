@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="32" height="32" fill="none">
+  <!-- Outer Hexagon border -->
+  <polygon points="12 2 22 7.75 22 18.25 12 24 2 18.25 2 7.75" stroke="#00F0FF" stroke-width="1.8" stroke-linejoin="round" />
+  <!-- Inner Hexagon vault boundary -->
+  <polygon points="12 5.5 17.5 8.75 17.5 15.25 12 18.5 6.5 15.25 6.5 8.75" stroke="#00F0FF" stroke-width="1.2" stroke-opacity="0.6" stroke-linejoin="round" />
+  <!-- Central defense node -->
+  <circle cx="12" cy="12" r="3" fill="#00F0FF" fill-opacity="0.3" stroke="#00F0FF" stroke-width="1.5" />
+  <!-- Concentric radar intercept lines -->
+  <line x1="12" y1="5.5" x2="12" y2="12" stroke="#00F0FF" stroke-width="1" stroke-opacity="0.5" />
+  <line x1="6.5" y1="15.25" x2="12" y2="12" stroke="#00F0FF" stroke-width="1" stroke-opacity="0.5" />
+  <line x1="17.5" y1="15.25" x2="12" y2="12" stroke="#00F0FF" stroke-width="1" stroke-opacity="0.5" />
+</svg>

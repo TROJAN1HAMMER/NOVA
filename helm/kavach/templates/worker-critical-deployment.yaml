@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kavach.fullname" . }}-worker-critical
+  labels:
+    {{- include "kavach.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker-critical
+spec:
+  # Dedicated, always-on capacity for kavach.critical/kavach.high — no
+  # autoscaling block, deliberately (see values.yaml's comment): the
+  # point of this pool is guaranteed capacity that a backlog of low-
+  # priority scans can never eat into, not elastic scale.
+  replicas: {{ .Values.workers.critical.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "kavach.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker-critical
+  template:
+    metadata:
+      labels:
+        {{- include "kavach.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: worker-critical
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: worker-critical
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.workers.image.repository }}:{{ .Values.workers.image.tag }}"
+          imagePullPolicy: {{ .Values.workers.image.pullPolicy }}
+          command:
+            - celery
+            - -A
+            - celery_worker.celery_app
+            - worker
+            - --loglevel=info
+            - --queues={{ .Values.workers.critical.queues }}
+            - --concurrency={{ .Values.workers.critical.concurrency }}
+            - --hostname=critical@%h
+          envFrom:
+            {{- include "kavach.envFrom" . | nindent 12 }}
+          volumeMounts:
+            {{- include "kavach.sharedVolumeMounts" . | nindent 12 }}
+          # No HTTP port — Celery workers aren't network servers. Liveness
+          # is a `celery inspect ping` against this specific worker's own
+          # hostname, which round-trips through the real broker connection
+          # (a stuck/disconnected worker fails this, not just a crashed
+          # process — the thing that actually matters for a task queue).
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                # --hostname=critical@%h above means this worker's own
+                # Celery node name is "critical@<pod hostname>" — %h has
+                # no real search-domain suffix to add inside a container,
+                # so it matches plain `hostname` here. Targeting our own
+                # node name specifically (not a broadcast ping) is what
+                # makes this a check of *this* pod, not "is any worker on
+                # the broker alive".
+                - "celery -A celery_worker.celery_app inspect ping --destination=critical@$(hostname) --timeout=10 | grep -q OK"
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 15
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.workers.critical.resources | nindent 12 }}
+      volumes:
+        {{- include "kavach.sharedVolumes" . | nindent 8 }}

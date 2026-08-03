@@ -1,0 +1,79 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kavach.configMapName" . }}
+  labels:
+    {{- include "kavach.labels" . | nindent 4 }}
+data:
+  # REDIS_URL lives in the Secret, not here, even though the in-chart
+  # Redis has no auth configured (so it carries no secret material of its
+  # own): when postgres.enabled/redis.enabled are false — using external
+  # managed services instead — secrets.existingSecret is expected to
+  # supply *both* DATABASE_URL and REDIS_URL together, so an operator
+  # overriding one connection string always overrides the other the same
+  # way, in the same place. See templates/secret.yaml.
+
+  APP_ENV: {{ .Values.config.appEnv | quote }}
+  DEBUG: {{ .Values.config.debug | quote }}
+  UPLOAD_DIR: "/app/uploads"
+  REPORTS_DIR: "/app/reports"
+  DATA_DIR: "/app/data"
+
+  AI_MODE: {{ .Values.config.aiMode | quote }}
+  AI_PROVIDER_PRIORITY: {{ .Values.config.aiProviderPriority | quote }}
+  ANTHROPIC_MODEL: {{ .Values.config.anthropicModel | quote }}
+  OPENAI_MODEL: {{ .Values.config.openaiModel | quote }}
+  GEMINI_MODEL: {{ .Values.config.geminiModel | quote }}
+  OLLAMA_BASE_URL: {{ .Values.config.ollamaBaseUrl | quote }}
+  OLLAMA_MODEL: {{ .Values.config.ollamaModel | quote }}
+  VLLM_BASE_URL: {{ .Values.config.vllmBaseUrl | quote }}
+  VLLM_MODEL: {{ .Values.config.vllmModel | quote }}
+
+  REPORT_STORAGE_BACKEND: {{ .Values.config.reportStorageBackend | quote }}
+  S3_ENDPOINT_URL: {{ .Values.config.s3Endpoint | quote }}
+  S3_BUCKET: {{ .Values.config.s3Bucket | quote }}
+  S3_REGION: {{ .Values.config.s3Region | quote }}
+  S3_USE_PATH_STYLE: {{ .Values.config.s3UsePathStyle | quote }}
+
+  JWT_ALGORITHM: {{ .Values.config.jwtAlgorithm | quote }}
+  ACCESS_TOKEN_EXPIRE_MINUTES: {{ .Values.config.accessTokenExpireMinutes | quote }}
+  REFRESH_TOKEN_EXPIRE_DAYS: {{ .Values.config.refreshTokenExpireDays | quote }}
+
+  OAUTH2_ENABLED: {{ .Values.config.oauth2Enabled | quote }}
+  OAUTH2_AUTHORIZE_URL: {{ .Values.config.oauth2AuthorizeUrl | quote }}
+  OAUTH2_TOKEN_URL: {{ .Values.config.oauth2TokenUrl | quote }}
+  OAUTH2_USERINFO_URL: {{ .Values.config.oauth2UserinfoUrl | quote }}
+  OAUTH2_REDIRECT_URI: {{ .Values.config.oauth2RedirectUri | quote }}
+  OAUTH2_SCOPE: {{ .Values.config.oauth2Scope | quote }}
+
+  LDAP_ENABLED: {{ .Values.config.ldapEnabled | quote }}
+  LDAP_SERVER_URL: {{ .Values.config.ldapServerUrl | quote }}
+  LDAP_USER_SEARCH_BASE: {{ .Values.config.ldapUserSearchBase | quote }}
+  LDAP_USER_SEARCH_FILTER: {{ .Values.config.ldapUserSearchFilter | quote }}
+  LDAP_EMAIL_ATTRIBUTE: {{ .Values.config.ldapEmailAttribute | quote }}
+  LDAP_FULL_NAME_ATTRIBUTE: {{ .Values.config.ldapFullNameAttribute | quote }}
+  LDAP_USE_SSL: {{ .Values.config.ldapUseSsl | quote }}
+
+  SAML_ENABLED: {{ .Values.config.samlEnabled | quote }}
+  SAML_IDP_METADATA_URL: {{ .Values.config.samlIdpMetadataUrl | quote }}
+  SAML_IDP_ENTITY_ID: {{ .Values.config.samlIdpEntityId | quote }}
+  SAML_SP_ENTITY_ID: {{ .Values.config.samlSpEntityId | quote }}
+  SAML_ACS_URL: {{ .Values.config.samlAcsUrl | quote }}
+
+  ALLOWED_ORIGINS: {{ .Values.config.allowedOrigins | quote }}
+
+  {{- if .Values.config.otelExporterOtlpEndpoint }}
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.config.otelExporterOtlpEndpoint | quote }}
+  {{- end }}
+  OTEL_SERVICE_NAME: "kavach"
+
+  NOTIFICATIONS_ENABLED: {{ .Values.config.notificationsEnabled | quote }}
+  NOTIFY_MIN_SEVERITY: {{ .Values.config.notifyMinSeverity | quote }}
+  EMAIL_SMTP_HOST: {{ .Values.config.emailSmtpHost | quote }}
+  EMAIL_SMTP_PORT: {{ .Values.config.emailSmtpPort | quote }}
+  EMAIL_SMTP_USE_TLS: {{ .Values.config.emailSmtpUseTls | quote }}
+  EMAIL_FROM_ADDRESS: {{ .Values.config.emailFromAddress | quote }}
+  EMAIL_TO_ADDRESSES: {{ join "," .Values.config.emailToAddresses | quote }}
+
+  GITHUB_WEBHOOK_SCAN_ALL_BRANCHES: {{ .Values.config.githubWebhookScanAllBranches | quote }}
+  ARCHIVE_AFTER_DAYS: {{ .Values.config.archiveAfterDays | quote }}

@@ -1,0 +1,70 @@
+{{- if .Values.monitoring.alertmanagerConfig.enabled }}
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: {{ include "kavach.fullname" . }}
+  labels:
+    {{- include "kavach.labels" . | nindent 4 }}
+    {{- with .Values.monitoring.serviceMonitor.extraLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  route:
+    receiver: kavach-default
+    groupBy: ["alertname"]
+    groupWait: 30s
+    groupInterval: 5m
+    repeatInterval: 4h
+    routes:
+      - receiver: kavach-critical
+        matchers:
+          - name: severity
+            value: critical
+            matchType: "="
+  receivers:
+    - name: kavach-default
+      {{- if .Values.secrets.slackWebhookUrl }}
+      slackConfigs:
+        - apiURL:
+            name: {{ include "kavach.secretName" . }}
+            key: SLACK_WEBHOOK_URL
+          channel: "#kavach-alerts"
+          title: '{{`{{ .CommonAnnotations.summary }}`}}'
+          text: '{{`{{ .CommonAnnotations.description }}`}}'
+      {{- end }}
+      {{- if .Values.secrets.webhookUrl }}
+      webhookConfigs:
+        - urlSecret:
+            name: {{ include "kavach.secretName" . }}
+            key: WEBHOOK_URL
+      {{- end }}
+    - name: kavach-critical
+      {{- if .Values.secrets.slackWebhookUrl }}
+      slackConfigs:
+        - apiURL:
+            name: {{ include "kavach.secretName" . }}
+            key: SLACK_WEBHOOK_URL
+          channel: "#kavach-critical-alerts"
+          title: '🔴 {{`{{ .CommonAnnotations.summary }}`}}'
+          text: '{{`{{ .CommonAnnotations.description }}`}}'
+      {{- end }}
+      {{- if and .Values.config.emailSmtpHost .Values.config.emailToAddresses }}
+      emailConfigs:
+        {{- range .Values.config.emailToAddresses }}
+        - to: {{ . | quote }}
+          from: {{ $.Values.config.emailFromAddress | quote }}
+          smarthost: "{{ $.Values.config.emailSmtpHost }}:{{ $.Values.config.emailSmtpPort }}"
+          authUsername: {{ $.Values.secrets.emailSmtpUsername | quote }}
+          authPassword:
+            name: {{ include "kavach.secretName" $ }}
+            key: EMAIL_SMTP_PASSWORD
+          requireTLS: {{ $.Values.config.emailSmtpUseTls }}
+        {{- end }}
+      {{- end }}
+      {{- if .Values.secrets.webhookUrl }}
+      webhookConfigs:
+        - urlSecret:
+            name: {{ include "kavach.secretName" . }}
+            key: WEBHOOK_URL
+      {{- end }}
+{{- end }}

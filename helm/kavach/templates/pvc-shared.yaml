@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "kavach.fullname" . }}-uploads
+  labels:
+    {{- include "kavach.labels" . | nindent 4 }}
+spec:
+  # ReadWriteMany: the api pod (receives an uploaded repo zip) and
+  # whichever worker pod picks up the Celery task to scan it are always
+  # different pods — both need to see the same file. Requires an RWX-
+  # capable StorageClass (NFS/EFS/Azure Files/Filestore/CephFS); a plain
+  # cloud-disk StorageClass is ReadWriteOnce and will fail to schedule the
+  # second pod that mounts this.
+  accessModes: ["ReadWriteMany"]
+  {{- if .Values.storage.uploads.storageClassName }}
+  storageClassName: {{ .Values.storage.uploads.storageClassName | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.uploads.size | quote }}
+{{- if not .Values.storage.reports.emptyDir }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "kavach.fullname" . }}-reports
+  labels:
+    {{- include "kavach.labels" . | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteMany"]
+  {{- if .Values.storage.reports.storageClassName }}
+  storageClassName: {{ .Values.storage.reports.storageClassName | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.reports.size | quote }}
+{{- end }}

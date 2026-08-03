@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kavach.fullname" . }}-beat
+  labels:
+    {{- include "kavach.labels" . | nindent 4 }}
+    app.kubernetes.io/component: beat
+spec:
+  # Hardcoded, not a value: Celery Beat must never run more than one
+  # instance at a time (two schedulers would both fire the periodic
+  # stalled-job sweep independently, running it twice concurrently).
+  replicas: 1
+  strategy:
+    # Recreate, not RollingUpdate: with replicas=1, a rolling update would
+    # briefly run the old and new beat pods at once — the exact scenario
+    # the single-replica constraint above exists to prevent. Recreate
+    # guarantees the old pod is fully gone before the new one starts.
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "kavach.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: beat
+  template:
+    metadata:
+      labels:
+        {{- include "kavach.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: beat
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: beat
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.beat.image.repository }}:{{ .Values.beat.image.tag }}"
+          imagePullPolicy: {{ .Values.beat.image.pullPolicy }}
+          command:
+            - celery
+            - -A
+            - celery_worker.celery_app
+            - beat
+            - --loglevel=info
+          envFrom:
+            {{- include "kavach.envFrom" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.beat.resources | nindent 12 }}

@@ -1,0 +1,158 @@
+@import "tailwindcss";
+
+/* Class-based dark mode — a manual toggle (see ThemeContext), not just
+   prefers-color-scheme, so `dark:` variants key off `.dark` on <html>. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+
+  /* Light (default) — chrome & ink from the dataviz palette */
+  --color-background: #f9f9f7;
+  --color-foreground: #0b0b0b;
+  --color-card: #fcfcfb;
+  --color-card-foreground: #0b0b0b;
+  --color-border: rgba(11, 11, 11, 0.1);
+  --color-input: #e1e0d9;
+
+  --color-primary: #2a78d6;
+  --color-primary-foreground: #fcfcfb;
+  --color-secondary: #f0efec;
+  --color-secondary-foreground: #0b0b0b;
+
+  --color-muted: #f0efec;
+  --color-muted-foreground: #52514e;
+
+  --color-accent: #eaf1fb;
+  --color-accent-foreground: #184f95;
+
+  --color-danger: #d03b3b;
+  --color-warning: #fab219;
+  --color-success: #0ca30c;
+}
+
+:root.dark {
+  --color-background: #0d0d0d;
+  --color-foreground: #ffffff;
+  --color-card: #1a1a19;
+  --color-card-foreground: #ffffff;
+  --color-border: rgba(255, 255, 255, 0.1);
+  --color-input: #2c2c2a;
+
+  --color-primary: #3987e5;
+  --color-primary-foreground: #0d0d0d;
+  --color-secondary: #232322;
+  --color-secondary-foreground: #ffffff;
+
+  --color-muted: #232322;
+  --color-muted-foreground: #c3c2b7;
+
+  --color-accent: #16273b;
+  --color-accent-foreground: #86b6ef;
+
+  --color-danger: #e66767;
+  --color-warning: #fab219;
+  --color-success: #0ca30c;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+}
+
+/* Skeleton loader sweep — only `transform` is animated (a translateX pass
+   over a static gradient), never a layout- or paint-heavy property. Used by
+   components/ui/Skeleton.tsx, which itself skips rendering this element
+   entirely under prefers-reduced-motion, but the media query below is kept
+   as a second line of defense for any other consumer. */
+@keyframes skeleton-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+.animate-skeleton-sweep {
+  animation: skeleton-sweep 1.6s ease-in-out infinite;
+}
+
+/* Slow, low-amplitude opacity pulse for "this is actively in progress" UI
+   (a running scan's status badge / active scanner row) — deliberately not
+   a spinner or a game-HUD glow, just a gentle breathing effect. */
+@keyframes pulse-slow {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 2.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-skeleton-sweep,
+  .animate-pulse-slow {
+    animation: none;
+  }
+}
+
+/* Sidebar nav-icon hover glow — a soft, premium blue bloom (Stripe/Linear/
+   Vercel-style), not a neon halo. Scoped to `.sidebar-nav-icon` specifically
+   so it never reaches the hamburger toggle or the topbar's profile/theme/
+   logout icons, which don't carry this class. Pure CSS (transform + filter
+   only) — no JS, no layout-affecting properties. `.is-active` on the parent
+   link keeps the existing active-pill styling untouched at rest; on hover it
+   gets a slightly stronger glow than an inactive item, not a different one. */
+.sidebar-nav-icon {
+  transition: transform 250ms ease, filter 250ms ease;
+}
+
+.sidebar-nav-link:hover .sidebar-nav-icon,
+.sidebar-nav-link:focus-visible .sidebar-nav-icon {
+  transform: scale(1.06);
+  filter: brightness(1.12) drop-shadow(0 0 9px rgba(59, 130, 246, 0.45));
+}
+
+.sidebar-nav-link.is-active:hover .sidebar-nav-icon,
+.sidebar-nav-link.is-active:focus-visible .sidebar-nav-icon {
+  filter: brightness(1.15) drop-shadow(0 0 12px rgba(59, 130, 246, 0.6));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-nav-icon {
+    transition: none;
+  }
+}
+
+@layer utilities {
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-border);
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-muted-foreground);
+  }
+
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}

@@ -1,0 +1,81 @@
+# AEKOF Backend Requirements
+# Python 3.11+
+
+# ----------------------------
+# Web Framework
+# ----------------------------
+fastapi
+uvicorn[standard]
+python-multipart
+
+# ----------------------------
+# Database
+# ----------------------------
+sqlalchemy>=2.0
+asyncpg
+alembic
+
+# ----------------------------
+# Redis / Background Jobs
+# ----------------------------
+redis
+celery
+
+# ----------------------------
+# Pydantic / Settings
+# ----------------------------
+pydantic
+pydantic-settings
+email-validator
+
+# ----------------------------
+# Auth
+# ----------------------------
+passlib[bcrypt]
+bcrypt<4.1
+ldap3
+
+# ----------------------------
+# AI / Knowledge Base / RAG
+# ----------------------------
+fastembed
+pgvector
+pypdf
+docx2txt
+python-docx
+exa-py>=1.0.0
+scikit-learn>=1.4.0
+
+# ----------------------------
+# Report Generation
+# ----------------------------
+reportlab
+boto3
+
+# ----------------------------
+# Observability
+# ----------------------------
+prometheus-client
+opentelemetry-api==1.44.0
+opentelemetry-sdk==1.44.0
+opentelemetry-exporter-otlp-proto-grpc==1.44.0
+opentelemetry-instrumentation-fastapi==0.65b0
+opentelemetry-instrumentation-sqlalchemy==0.65b0
+opentelemetry-instrumentation-celery==0.65b0
+opentelemetry-instrumentation-httpx==0.65b0
+opentelemetry-instrumentation-redis==0.65b0
+
+# ----------------------------
+# Utilities
+# ----------------------------
+python-dotenv
+aiofiles
+httpx
+structlog
+python-jose[cryptography]
+
+# ----------------------------
+# Testing
+# ----------------------------
+pytest
+pytest-asyncio

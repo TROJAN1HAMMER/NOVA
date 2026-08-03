@@ -1,0 +1,164 @@
+# KAVACH Compliance Engine — PCI DSS v4.0 rule catalog
+#
+# Illustrative mapping for a DevSecOps demo/education platform, not a
+# certified PCI QSA audit mapping — requirement IDs and titles are real,
+# but "does finding category X violate requirement Y" is KAVACH's own
+# judgment call, the same one app/data/compliance_mappings.json encoded
+# as flat strings before this engine existed structurally.
+#
+# trigger fields (all optional, AND'd together when present):
+#   categories:   finding.category must be one of these (case-insensitive)
+#   min_severity: finding.severity must be >= this (INFO < LOW < MEDIUM < HIGH < CRITICAL)
+#   sources:      finding.source must be one of these
+#   keywords:     any keyword must appear in title/description (case-insensitive)
+
+framework:
+  name: "PCI DSS v4.0"
+  short_code: "pci_dss_v4"
+  version: "4.0"
+  description: "Payment Card Industry Data Security Standard"
+
+controls:
+  - requirement_id: "2.2"
+    title: "Secure configurations for all system components"
+    description: >
+      System components are configured and managed securely, including
+      changing vendor default settings, removing unnecessary functionality,
+      and disabling insecure services and protocols.
+    trigger:
+      categories: [security_misconfiguration]
+      min_severity: MEDIUM
+    recommendation: >
+      Apply CIS Benchmark hardening guides for every system component,
+      disable debug/development modes in production, remove default
+      credentials, and enforce configuration drift detection.
+
+  - requirement_id: "3.5"
+    title: "Cryptographic keys used to protect stored account data are secured"
+    description: >
+      Cryptographic keys and cryptographic key material are generated,
+      distributed, and stored securely, including use of a strong,
+      industry-accepted random number generator for key generation.
+    trigger:
+      categories: [insecure_random, weak_cryptography]
+      min_severity: LOW
+    recommendation: >
+      Generate all cryptographic keys and tokens using a cryptographically
+      secure random number generator (the `secrets` module in Python, not
+      `random`), and rotate keys according to a documented key-management
+      policy.
+
+  - requirement_id: "4.2.1"
+    title: "Strong cryptography for cardholder data transmission"
+    description: >
+      Strong cryptography and security protocols are implemented to
+      safeguard cardholder data during transmission over open, public
+      networks. Only trusted keys/certificates are accepted, and the
+      protocol implementation supports only secure versions/configurations.
+    trigger:
+      categories: [weak_cryptography]
+      min_severity: LOW
+    recommendation: >
+      Replace MD5/SHA-1/DES/RC4 with SHA-256/AES-256-GCM, enforce TLS 1.2+
+      for all network communication, and disable legacy protocol versions
+      at the load balancer/gateway.
+
+  - requirement_id: "6.2"
+    title: "Bespoke and custom software is developed securely"
+    description: >
+      Bespoke and custom software is developed in accordance with secure
+      coding practices, covering at minimum injection attacks and the
+      handling of untrusted input.
+    trigger:
+      categories: [sql_injection]
+      min_severity: LOW
+    recommendation: >
+      Replace string concatenation/formatting in SQL construction with
+      parameterized queries or an ORM, and enforce this via a linter rule
+      or pre-commit hook.
+
+  - requirement_id: "6.2.4"
+    title: "Prevent or mitigate common software attacks"
+    description: >
+      Software engineering techniques or other methods are defined and in
+      use by software development personnel to prevent or mitigate common
+      software attack techniques, including injection attacks and
+      insecure deserialization.
+    trigger:
+      categories: [command_injection, unsafe_deserialization, path_traversal]
+      min_severity: LOW
+    recommendation: >
+      Avoid shell=True and os.system() in favor of subprocess with an
+      argument list; never deserialize untrusted data with pickle; use
+      yaml.safe_load() instead of yaml.load(); validate and canonicalize
+      all file-path input against directory traversal.
+
+  - requirement_id: "6.3.1"
+    title: "Security vulnerabilities are identified and managed"
+    description: >
+      Security vulnerabilities are identified and ranked using industry
+      best practices and the potential impact, and addressed within a
+      risk-based timeframe.
+    trigger:
+      categories: [sql_injection, command_injection, unsafe_deserialization, path_traversal]
+      min_severity: MEDIUM
+    recommendation: >
+      Feed SAST/DAST findings into a tracked remediation workflow with
+      SLA timelines proportional to severity, and require sign-off before
+      closing a finding as resolved.
+
+  - requirement_id: "6.3.3"
+    title: "System components are protected from known vulnerabilities"
+    description: >
+      System components are protected from known vulnerabilities by
+      installing applicable security patches/updates within an
+      appropriate time frame after release.
+    trigger:
+      categories: [vulnerable_dependency]
+      min_severity: LOW
+    recommendation: >
+      Update affected packages to patched versions immediately, subscribe
+      to vulnerability advisories (GitHub Security Advisories, OSV), and
+      run dependency scanning in CI/CD on every build.
+
+  - requirement_id: "8.2"
+    title: "User identification and authentication credentials are protected"
+    description: >
+      Strong cryptography is used to render all authentication credentials
+      unreadable during storage and transmission on all system components.
+    trigger:
+      categories: [hardcoded_secret]
+      min_severity: LOW
+    recommendation: >
+      Remove hardcoded credentials from source code immediately, rotate
+      the exposed credential, and store secrets in a dedicated secrets
+      manager (HashiCorp Vault, AWS Secrets Manager) instead.
+
+  - requirement_id: "8.3"
+    title: "Strong authentication for users and administrators is established"
+    description: >
+      Strong authentication controls are established and managed for all
+      application and system accounts, including protection of
+      authentication factors from disclosure.
+    trigger:
+      categories: [hardcoded_secret]
+      keywords: [password, credential, api_key, apikey]
+      min_severity: LOW
+    recommendation: >
+      Enforce pre-commit secret scanning to prevent credentials from ever
+      reaching version control, and audit git history for previously
+      committed secrets.
+
+  - requirement_id: "12.8"
+    title: "Third-party service provider risk is managed"
+    description: >
+      Risk associated with third-party service providers and software
+      dependencies is identified, formally managed, and monitored on an
+      ongoing basis.
+    trigger:
+      categories: [vulnerable_dependency]
+      min_severity: LOW
+    recommendation: >
+      Maintain a Software Bill of Materials (SBOM) for all components,
+      and define contractual/process requirements for third-party
+      dependency patch SLAs.

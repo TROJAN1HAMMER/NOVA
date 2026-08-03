@@ -1,0 +1,1005 @@
+---
+# Source: kavach/templates/pdb.yaml
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: kavach-api
+  labels:
+    helm.sh/chart: kavach-0.1.0
+    app.kubernetes.io/name: kavach
+    app.kubernetes.io/instance: kavach
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: api
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kavach
+      app.kubernetes.io/instance: kavach
+      app.kubernetes.io/component: api
+---
+# Source: kavach/templates/secret.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kavach-secrets
+  labels:
+    helm.sh/chart: kavach-0.1.0
+    app.kubernetes.io/name: kavach
+    app.kubernetes.io/instance: kavach
+    app.kubernetes.io/managed-by: Helm
+type: Opaque
+stringData:
+  # DATABASE_URL embeds the Postgres password, so it lives here rather
+  # than the ConfigMap even though most of its shape is non-secret.
+  # REDIS_URL has no secret material of its own (no auth configured on
+  # the in-chart Redis) but is kept alongside it anyway — see
+  # configmap.yaml's comment for why.
+  DATABASE_URL: "postgresql+asyncpg://kavach:change-me@kavach-postgres:5432/kavach_db"
+  REDIS_URL: "redis://kavach-redis:6379/0"
+
+  APP_SECRET_KEY: "change-me-32-chars-minimum-please"
+  JWT_SECRET_KEY: "change-me-jwt-32chars-minimum-please"
+
+  S3_ACCESS_KEY_ID: ""
+  S3_SECRET_ACCESS_KEY: ""
+
+  NVD_API_KEY: ""
+  ANTHROPIC_API_KEY: ""
+  OPENAI_API_KEY: ""
+  GEMINI_API_KEY: ""
+
+  OAUTH2_CLIENT_ID: ""
+  OAUTH2_CLIENT_SECRET: ""
+
+  LDAP_BIND_DN: ""
+  LDAP_BIND_PASSWORD: ""
+
+  # Postgres StatefulSet's own POSTGRES_PASSWORD env var reads this same
+  # key — one value, used both to initialize Postgres and to build
+  # DATABASE_URL above, so they can never drift apart.
+  POSTGRES_PASSWORD: "change-me"
+---
+# Source: kavach/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kavach-config
+  labels:
+    helm.sh/chart: kavach-0.1.0
+    app.kubernetes.io/name: kavach
+    app.kubernetes.io/instance: kavach
+    app.kubernetes.io/managed-by: Helm
+data:
+  # REDIS_URL lives in the Secret, not here, even though the in-chart
+  # Redis has no auth configured (so it carries no secret material of its
+  # own): when postgres.enabled/redis.enabled are false — using external
+  # managed services instead — secrets.existingSecret is expected to
+  # supply *both* DATABASE_URL and REDIS_URL together, so an operator
+  # overriding one connection string always overrides the other the same
+  # way, in the same place. See templates/secret.yaml.
+
+  APP_ENV: "production"
+  DEBUG: "false"
+  UPLOAD_DIR: "/app/uploads"
+  REPORTS_DIR: "/app/reports"
+  DATA_DIR: "/app/data"
+
+  AI_MODE: "hybrid"
+  AI_PROVIDER_PRIORITY: "auto"
+  ANTHROPIC_MODEL: "claude-sonnet-5"
+  OPENAI_MODEL: "gpt-4o-mini"
+  GEMINI_MODEL: "gemini-1.5-flash"
+  OLLAMA_BASE_URL: ""
+  OLLAMA_MODEL: ""
+  VLLM_BASE_URL: ""
+  VLLM_MODEL: ""
+
+  REPORT_STORAGE_BACKEND: "local"
+  S3_ENDPOINT_URL: ""
+  S3_BUCKET: "kavach-reports"
+  S3_REGION: "us-east-1"
+  S3_USE_PATH_STYLE: "true"
+
+  JWT_ALGORITHM: "HS256"
+  ACCESS_TOKEN_EXPIRE_MINUTES: "30"
+  REFRESH_TOKEN_EXPIRE_DAYS: "7"
+
+  OAUTH2_ENABLED: "false"
+  OAUTH2_AUTHORIZE_URL: ""
+  OAUTH2_TOKEN_URL: ""
+  OAUTH2_USERINFO_URL: ""
+  OAUTH2_REDIRECT_URI: ""
+  OAUTH2_SCOPE: "openid email profile"
+
+  LDAP_ENABLED: "false"
+  LDAP_SERVER_URL: ""
+  LDAP_USER_SEARCH_BASE: ""
+  LDAP_USER_SEARCH_FILTER: "(uid={username})"
+  LDAP_EMAIL_ATTRIBUTE: "mail"
+  LDAP_FULL_NAME_ATTRIBUTE: "cn"
+  LDAP_USE_SSL: "false"
+
+  SAML_ENABLED: "false"
+  SAML_IDP_METADATA_URL: ""
+  SAML_IDP_ENTITY_ID: ""
+  SAML_SP_ENTITY_ID: "kavach"
+  SAML_ACS_URL: ""
+
+  ALLOWED_ORIGINS: "https://kavach.example.com"
+---
+# Source: kavach/templates/pvc-shared.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: kavach-uploads
+  labels:
+    helm.sh/chart: kavach-0.1.0
+    app.kubernetes.io/name: kavach
+    app.kubernetes.io/instance: kavach
+    app.kubernetes.io/managed-by: Helm
+spec:
+  # ReadWriteMany: the api pod (receives an uploaded repo zip) and
+  # whichever worker pod picks up the Celery task to scan it are always
+  # different pods — both need to see the same file. Requires an RWX-
+  # capable StorageClass (NFS/EFS/Azure Files/Filestore/CephFS); a plain
+  # cloud-disk StorageClass is ReadWriteOnce and will fail to schedule the
+  # second pod that mounts this.
+  accessModes: ["ReadWriteMany"]
+  resources:
+    requests:
+      storage: "10Gi"
+---
+# Source: kavach/templates/api-deployment.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: kavach-api
+  labels:
+    helm.sh/chart: kavach-0.1.0
+    app.kubernetes.io/name: kavach
+    app.kubernetes.io/instance: kavach
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: api
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: kavach
+    app.kubernetes.io/instance: kavach
+    app.kubernetes.io/component: api
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+---
+# Source: kavach/templates/flower-deployment.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: kavach-flower
+  labels:
+    helm.sh/chart: kavach-0.1.0
+    app.kubernetes.io/name: kavach
+    app.kubernetes.io/instance: kavach
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: flower
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: kavach
+    app.kubernetes.io/instance: kavach
+    app.kubernetes.io/component: flower
+  ports:
+    - name: http
+      port: 5555
+      targetPort: http
+---
+# Source: kavach/templates/frontend-deployment.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: kavach-frontend
+  labels:
+    helm.sh/chart: kavach-0.1.0
+    app.kubernetes.io/name: kavach
+    app.kubernetes.io/instance: kavach
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: frontend
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: kavach
+    app.kubernetes.io/instance: kavach
+    app.kubernetes.io/component: frontend
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+# Source: kavach/templates/postgres-statefulset.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: kavach-postgres
+  labels:
+    helm.sh/chart: kavach-0.1.0
+    app.kubernetes.io/name: kavach
+    app.kubernetes.io/instance: kavach
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: postgres
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: kavach
+    app.kubernetes.io/instance: kavach
+    app.kubernetes.io/component: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+# Source: kavach/templates/redis-statefulset.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: kavach-redis
+  labels:
+    helm.sh/chart: kavach-0.1.0
+    app.kubernetes.io/name: kavach
+    app.kubernetes.io/instance: kavach
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: redis
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: kavach
+    app.kubernetes.io/instance: kavach
+    app.kubernetes.io/component: redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+---
+# Source: kavach/templates/api-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kavach-api
+  labels:
+    helm.sh/chart: kavach-0.1.0
+    app.kubernetes.io/name: kavach
+    app.kubernetes.io/instance: kavach
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: api
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kavach
+      app.kubernetes.io/instance: kavach
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kavach
+        app.kubernetes.io/instance: kavach
+        app.kubernetes.io/component: api
+    spec:
+      securityContext:
+        fsGroup: 1000
+      initContainers:
+        - name: wait-for-migrations
+          # The migration Job (templates/migration-job.yaml) is a Helm
+          # pre-install/pre-upgrade hook, so it's already run to
+          # completion before this Deployment's rollout even starts under
+          # normal `helm upgrade` — this initContainer is a second,
+          # cheaper line of defense against the API starting against a
+          # schema migrations haven't reached yet (e.g. someone
+          # `kubectl apply`s a rendered manifest directly, bypassing Helm
+          # hooks entirely).
+          image: "postgres:16-alpine"
+          command:
+            - sh
+            - -c
+            - until pg_isready -h kavach-postgres -p 5432 -U kavach; do echo waiting for postgres; sleep 2; done
+      containers:
+        - name: api
+          image: "kavach-backend:latest"
+          imagePullPolicy: IfNotPresent
+          command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: kavach-config
+            - secretRef:
+                name: kavach-secrets
+          volumeMounts:
+            - name: uploads
+              mountPath: /app/uploads
+            - name: reports
+              mountPath: /app/reports
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 250m
+              memory: 512Mi
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: kavach-uploads
+        - name: reports
+          emptyDir: {}
+---
+# Source: kavach/templates/beat-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kavach-beat
+  labels:
+    helm.sh/chart: kavach-0.1.0
+    app.kubernetes.io/name: kavach
+    app.kubernetes.io/instance: kavach
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: beat
+spec:
+  # Hardcoded, not a value: Celery Beat must never run more than one
+  # instance at a time (two schedulers would both fire the periodic
+  # stalled-job sweep independently, running it twice concurrently).
+  replicas: 1
+  strategy:
+    # Recreate, not RollingUpdate: with replicas=1, a rolling update would
+    # briefly run the old and new beat pods at once — the exact scenario
+    # the single-replica constraint above exists to prevent. Recreate
+    # guarantees the old pod is fully gone before the new one starts.
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kavach
+      app.kubernetes.io/instance: kavach
+      app.kubernetes.io/component: beat
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kavach
+        app.kubernetes.io/instance: kavach
+        app.kubernetes.io/component: beat
+    spec:
+      containers:
+        - name: beat
+          image: "kavach-backend:latest"
+          imagePullPolicy: IfNotPresent
+          command:
+            - celery
+            - -A
+            - celery_worker.celery_app
+            - beat
+            - --loglevel=info
+          envFrom:
+            - configMapRef:
+                name: kavach-config
+            - secretRef:
+                name: kavach-secrets
+          resources:
+            limits:
+              cpu: 250m
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+---
+# Source: kavach/templates/flower-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kavach-flower
+  labels:
+    helm.sh/chart: kavach-0.1.0
+    app.kubernetes.io/name: kavach
+    app.kubernetes.io/instance: kavach
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: flower
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kavach
+      app.kubernetes.io/instance: kavach
+      app.kubernetes.io/component: flower
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kavach
+        app.kubernetes.io/instance: kavach
+        app.kubernetes.io/component: flower
+    spec:
+      containers:
+        - name: flower
+          image: "mher/flower:2.0"
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: CELERY_BROKER_URL
+              value: "redis://kavach-redis:6379/0"
+          ports:
+            - name: http
+              containerPort: 5555
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: 250m
+              memory: 256Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+---
+# Source: kavach/templates/frontend-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kavach-frontend
+  labels:
+    helm.sh/chart: kavach-0.1.0
+    app.kubernetes.io/name: kavach
+    app.kubernetes.io/instance: kavach
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kavach
+      app.kubernetes.io/instance: kavach
+      app.kubernetes.io/component: frontend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kavach
+        app.kubernetes.io/instance: kavach
+        app.kubernetes.io/component: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: "kavach-frontend:latest"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: 250m
+              memory: 256Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
+---
+# Source: kavach/templates/worker-critical-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kavach-worker-critical
+  labels:
+    helm.sh/chart: kavach-0.1.0
+    app.kubernetes.io/name: kavach
+    app.kubernetes.io/instance: kavach
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: worker-critical
+spec:
+  # Dedicated, always-on capacity for kavach.critical/kavach.high — no
+  # autoscaling block, deliberately (see values.yaml's comment): the
+  # point of this pool is guaranteed capacity that a backlog of low-
+  # priority scans can never eat into, not elastic scale.
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kavach
+      app.kubernetes.io/instance: kavach
+      app.kubernetes.io/component: worker-critical
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kavach
+        app.kubernetes.io/instance: kavach
+        app.kubernetes.io/component: worker-critical
+    spec:
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: worker-critical
+          image: "kavach-backend:latest"
+          imagePullPolicy: IfNotPresent
+          command:
+            - celery
+            - -A
+            - celery_worker.celery_app
+            - worker
+            - --loglevel=info
+            - --queues=kavach.critical,kavach.high
+            - --concurrency=4
+            - --hostname=critical@%h
+          envFrom:
+            - configMapRef:
+                name: kavach-config
+            - secretRef:
+                name: kavach-secrets
+          volumeMounts:
+            - name: uploads
+              mountPath: /app/uploads
+            - name: reports
+              mountPath: /app/reports
+          # No HTTP port — Celery workers aren't network servers. Liveness
+          # is a `celery inspect ping` against this specific worker's own
+          # hostname, which round-trips through the real broker connection
+          # (a stuck/disconnected worker fails this, not just a crashed
+          # process — the thing that actually matters for a task queue).
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                # --hostname=critical@%h above means this worker's own
+                # Celery node name is "critical@<pod hostname>" — %h has
+                # no real search-domain suffix to add inside a container,
+                # so it matches plain `hostname` here. Targeting our own
+                # node name specifically (not a broadcast ping) is what
+                # makes this a check of *this* pod, not "is any worker on
+                # the broker alive".
+                - "celery -A celery_worker.celery_app inspect ping --destination=critical@$(hostname) --timeout=10 | grep -q OK"
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 15
+            failureThreshold: 3
+          resources:
+            limits:
+              cpu: "2"
+              memory: 2Gi
+            requests:
+              cpu: 500m
+              memory: 1Gi
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: kavach-uploads
+        - name: reports
+          emptyDir: {}
+---
+# Source: kavach/templates/worker-default-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kavach-worker-default
+  labels:
+    helm.sh/chart: kavach-0.1.0
+    app.kubernetes.io/name: kavach
+    app.kubernetes.io/instance: kavach
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: worker-default
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kavach
+      app.kubernetes.io/instance: kavach
+      app.kubernetes.io/component: worker-default
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kavach
+        app.kubernetes.io/instance: kavach
+        app.kubernetes.io/component: worker-default
+    spec:
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: worker-default
+          image: "kavach-backend:latest"
+          imagePullPolicy: IfNotPresent
+          command:
+            - celery
+            - -A
+            - celery_worker.celery_app
+            - worker
+            - --loglevel=info
+            - --queues=kavach.normal,kavach.low
+            - --concurrency=8
+            - --hostname=default@%h
+          envFrom:
+            - configMapRef:
+                name: kavach-config
+            - secretRef:
+                name: kavach-secrets
+          volumeMounts:
+            - name: uploads
+              mountPath: /app/uploads
+            - name: reports
+              mountPath: /app/reports
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - "celery -A celery_worker.celery_app inspect ping --destination=default@$(hostname) --timeout=10 | grep -q OK"
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 15
+            failureThreshold: 3
+          resources:
+            limits:
+              cpu: "2"
+              memory: 2Gi
+            requests:
+              cpu: 500m
+              memory: 1Gi
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: kavach-uploads
+        - name: reports
+          emptyDir: {}
+---
+# Source: kavach/templates/hpa.yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: kavach-api
+  labels:
+    helm.sh/chart: kavach-0.1.0
+    app.kubernetes.io/name: kavach
+    app.kubernetes.io/instance: kavach
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: api
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: kavach-api
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+---
+# Source: kavach/templates/hpa.yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: kavach-worker-default
+  labels:
+    helm.sh/chart: kavach-0.1.0
+    app.kubernetes.io/name: kavach
+    app.kubernetes.io/instance: kavach
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: worker-default
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: kavach-worker-default
+  minReplicas: 3
+  maxReplicas: 30
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75
+  behavior:
+    # Scanning is bursty (a batch of repos submitted at once) — scale up
+    # fast, but scale down cautiously so a brief lull between bursts
+    # doesn't thrash worker pods that'll just be needed again in a minute.
+    scaleUp:
+      stabilizationWindowSeconds: 30
+    scaleDown:
+      stabilizationWindowSeconds: 300
+---
+# Source: kavach/templates/postgres-statefulset.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kavach-postgres
+  labels:
+    helm.sh/chart: kavach-0.1.0
+    app.kubernetes.io/name: kavach
+    app.kubernetes.io/instance: kavach
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: postgres
+spec:
+  serviceName: kavach-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kavach
+      app.kubernetes.io/instance: kavach
+      app.kubernetes.io/component: postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kavach
+        app.kubernetes.io/instance: kavach
+        app.kubernetes.io/component: postgres
+    spec:
+      securityContext:
+        fsGroup: 999
+      containers:
+        - name: postgres
+          image: "postgres:16-alpine"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: "kavach"
+            - name: POSTGRES_DB
+              value: "kavach_db"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: kavach-secrets
+                  key: POSTGRES_PASSWORD
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "kavach", "-d", "kavach_db"]
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "kavach", "-d", "kavach_db"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 250m
+              memory: 512Mi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: "20Gi"
+---
+# Source: kavach/templates/redis-statefulset.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kavach-redis
+  labels:
+    helm.sh/chart: kavach-0.1.0
+    app.kubernetes.io/name: kavach
+    app.kubernetes.io/instance: kavach
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: redis
+spec:
+  serviceName: kavach-redis
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kavach
+      app.kubernetes.io/instance: kavach
+      app.kubernetes.io/component: redis
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kavach
+        app.kubernetes.io/instance: kavach
+        app.kubernetes.io/component: redis
+    spec:
+      containers:
+        - name: redis
+          image: "redis:7-alpine"
+          imagePullPolicy: IfNotPresent
+          # --appendonly yes: Celery uses Redis as both broker and result
+          # backend (see app/workers/celery_app.py) — an unpersisted Redis
+          # losing queued-but-not-yet-picked-up tasks on a pod restart
+          # would silently drop in-flight scans, so this trades a little
+          # write throughput for not doing that.
+          args: ["redis-server", "--appendonly", "yes"]
+          ports:
+            - name: redis
+              containerPort: 6379
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 6
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: "5Gi"
+---
+# Source: kavach/templates/ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kavach
+  labels:
+    helm.sh/chart: kavach-0.1.0
+    app.kubernetes.io/name: kavach
+    app.kubernetes.io/instance: kavach
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: 200m
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - kavach.example.com
+      secretName: kavach-tls
+  rules:
+    - host: kavach.example.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: kavach-api
+                port:
+                  number: 8000
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: kavach-frontend
+                port:
+                  number: 8080
+---
+# Source: kavach/templates/tests/test-connection.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kavach-test-connection
+  labels:
+    helm.sh/chart: kavach-0.1.0
+    app.kubernetes.io/name: kavach
+    app.kubernetes.io/instance: kavach
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  containers:
+    - name: readiness-check
+      image: curlimages/curl:8.10.1
+      # Waits (curl --retry) for the API to become fully ready (DB+Redis
+      # reachable, not just the process being up) rather than a single
+      # attempt racing the rollout — `helm test` typically runs right
+      # after `helm install`, before pods necessarily have their readiness
+      # probes passing yet.
+      command:
+        - sh
+        - -c
+        - |
+          curl --fail --silent --show-error --retry 10 --retry-delay 5 --retry-connrefused \
+            "http://kavach-api:8000/health/ready"
+---
+# Source: kavach/templates/migration-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kavach-migrate-1
+  labels:
+    helm.sh/chart: kavach-0.1.0
+    app.kubernetes.io/name: kavach
+    app.kubernetes.io/instance: kavach
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: migration
+  annotations:
+    # Runs before any workload that expects the new schema is rolled out,
+    # on both first install and every upgrade. Named per-revision (see
+    # metadata.name above) since Jobs are immutable — `helm upgrade` can't
+    # reuse the previous revision's Job object, and hook-succeeded/
+    # hook-failed deletion policies below keep old ones from piling up.
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kavach
+        app.kubernetes.io/instance: kavach
+        app.kubernetes.io/component: migration
+    spec:
+      restartPolicy: Never
+      initContainers:
+        - name: wait-for-postgres
+          image: "postgres:16-alpine"
+          command:
+            - sh
+            - -c
+            - until pg_isready -h kavach-postgres -p 5432 -U kavach; do echo waiting for postgres; sleep 2; done
+      containers:
+        - name: migrate
+          image: "kavach-backend:latest"
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "alembic", "upgrade", "head"]
+          envFrom:
+            - configMapRef:
+                name: kavach-config
+            - secretRef:
+                name: kavach-secrets
