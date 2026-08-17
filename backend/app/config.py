@@ -94,7 +94,7 @@ class Settings(BaseSettings):
     # (default) to derive the order from ai_mode, or set an explicit
     # comma-separated list (e.g. "vllm,ollama,claude") to override it
     # outright, bypassing ai_mode entirely.
-    ai_mode: str = Field(default="hybrid", env="AI_MODE")
+    ai_mode: str = Field(default="local", env="AI_MODE")
     ai_provider_priority: str = Field(default="auto", env="AI_PROVIDER_PRIORITY")
     ai_cache_ttl_seconds: int = Field(default=86400, env="AI_CACHE_TTL_SECONDS")
 
@@ -144,6 +144,12 @@ class Settings(BaseSettings):
     # (http://bucket.host/key), which real AWS S3 doesn't need.
     s3_use_path_style: bool = Field(default=True, env="S3_USE_PATH_STYLE")
     s3_presigned_url_expiry_seconds: int = Field(default=3600, env="S3_PRESIGNED_URL_EXPIRY_SECONDS")
+
+    # Exa Web Search
+    exa_enabled: bool = Field(default=False, env="EXA_ENABLED")
+
+    # NVD API
+    nvd_enabled: bool = Field(default=False, env="NVD_ENABLED")
 
     # CORS
     # `NoDecode` is required, not cosmetic: pydantic-settings' default

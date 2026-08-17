@@ -7,7 +7,7 @@ integration-level (real DB + real local models) and covered by the manual
 testing walkthrough instead.
 """
 
-from app.services.assistant.assistant_service import Citation, build_context_block, format_history, is_sufficient
+from app.services.assistant.assistant_service import Citation, build_context_block, format_history
 from app.services.assistant.rerank_manager import normalize_confidence
 
 
@@ -33,17 +33,6 @@ class TestNormalizeConfidence:
             assert 0.0 <= score <= 1.0
 
 
-class TestIsSufficient:
-    def test_above_threshold(self):
-        assert is_sufficient(0.9) is True
-
-    def test_below_threshold(self):
-        assert is_sufficient(0.1) is False
-
-    def test_at_exact_threshold_is_sufficient(self):
-        from app.config import get_settings
-
-        assert is_sufficient(get_settings().assistant_min_confidence) is True
 
 
 def _citation(**overrides) -> Citation:

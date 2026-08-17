@@ -125,7 +125,6 @@ The **AEKOF** architecture follows a multi-tier, cascaded retrieval and consensu
 
 ### Infrastructure & DevOps
 - **Containers**: [Docker](https://www.docker.com/) & Docker Compose
-- **Orchestration**: [Helm](https://helm.sh/) / Kubernetes
 - **Web Server**: [Nginx](https://www.nginx.com/) (Reverse Proxy & Static SPA host)
 
 ---
@@ -176,8 +175,6 @@ The **AEKOF** architecture follows a multi-tier, cascaded retrieval and consensu
 │   ├── package.json          # Node dependencies & metadata
 │   └── vite.config.ts        # Vite configuration
 ├── docker-compose.yml        # Top-level full-stack orchestrator
-├── helm/                     # Kubernetes Helm deployment charts
-├── k8s/                      # Kubernetes manifest templates
 ├── docs/                     # Platform architecture & API documentation
 ├── .gitignore                # Production ignore rules
 ├── CHANGELOG.md              # Project history & release milestones
@@ -195,6 +192,8 @@ The **AEKOF** architecture follows a multi-tier, cascaded retrieval and consensu
 - *Or for manual setup*: **Python 3.11+**, **Node.js 20+**, **PostgreSQL 16** (with `pgvector`), **Redis 7**
 
 ### Quickstart with Docker Compose
+
+NOVA is designed to be fully self-contained using Docker Compose for local development and offline-first execution.
 
 ```bash
 # 1. Clone the repository

@@ -15,6 +15,11 @@ class ExaService:
 
     def search_fallback(self, question: str) -> str:
         """Executes external web search via Exa API when vector retrieval confidence is below threshold."""
+        from app.config import get_settings
+        if not get_settings().exa_enabled:
+            logger.info("exa_service.disabled")
+            return "Sorry, I don't know based on the given context and web search fallback is not configured."
+
         if not self.api_key:
             logger.warning("exa_service.missing_key")
             return "Sorry, I don't know based on the given context and web search fallback is not configured."
