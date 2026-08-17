@@ -14,17 +14,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.config import get_settings
 from app.db.base import Base
-from app.models import (  # noqa: F401
-    business_module,
-    finding,
-    knowledge,
-    report,
-    repository,
-    risk_factor_weight,
-    scan_job,
-    scan_result,
-    user,
-)
+from app.models import *  # noqa: F401, F403
 
 config = context.config
 

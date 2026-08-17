@@ -15,6 +15,7 @@ from starlette.requests import Request
 from app.auth.dependencies import get_current_active_user
 from app.auth.schemas import RefreshTokenRequest, TokenResponse, UserRead, UserRegisterRequest
 from app.auth.service import AuthService
+from app.models.enums import UserRole
 from app.models.user import User
 from app.repositories.deps import get_user_repository
 from app.repositories.user_repository import UserRepository

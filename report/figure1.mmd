@@ -1,0 +1,16 @@
+flowchart TD
+    A([User Query]) --> B[Query Planning Layer]
+    B --> C{Deterministic Match?}
+    
+    C -- Yes --> G[Generation Layer]
+    C -- No --> D[Retrieval Layer]
+    
+    D --> E[Ranking Layer]
+    E --> F[Confidence Layer]
+    
+    F -- Trust >= Threshold --> G
+    F -- Trust < Threshold --> H[Corrective Fallback]
+    
+    H --> G
+    G --> I[Citation Layer]
+    I --> J([Final Response])

@@ -1,0 +1,25 @@
+sequenceDiagram
+    participant U as User
+    participant QP as Query Planning Layer
+    participant RL as Retrieval Layer
+    participant Rnk as Ranking Layer
+    participant CL as Confidence Layer
+    participant GL as Generation Layer
+
+    U->>QP: Submit Query
+    QP->>QP: Analyze Complexity & Set Thresholds
+    QP->>RL: Request Context
+    RL->>RL: Execute Dense Search
+    RL->>Rnk: Return Candidate Set
+    Rnk->>Rnk: Execute Cross-Encoder Scoring
+    Rnk->>CL: Forward Top Candidates
+    CL->>CL: Evaluate Pairwise Consensus
+    CL->>CL: Calculate Calibrated Trust Score
+    
+    alt Trust Score < Threshold
+        CL->>CL: Trigger External Fallback
+    end
+    
+    CL->>GL: Provide Verified Context
+    GL->>GL: Synthesize Response
+    GL-->>U: Return Response with Citations

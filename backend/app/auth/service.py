@@ -22,6 +22,7 @@ from app.auth.security import (
     verify_password,
 )
 from app.core.exceptions import ConflictError, UnauthorizedError
+from app.models.enums import UserRole
 from app.models.user import User
 from app.repositories.user_repository import UserRepository
 from app.services.audit.audit_logger import log_action

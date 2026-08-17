@@ -1,5 +1,5 @@
 import { useId } from "react";
-import type { ConfidenceTier } from "../lib/severity";
+
 
 export interface ChartGradientIds {
   blue: string;

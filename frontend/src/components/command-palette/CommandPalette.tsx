@@ -31,6 +31,8 @@ const SECTION_LABELS: Record<CommandSection, string> = {
   findings: "Knowledge Insights",
   compliance: "Axioms",
   reports: "AI Reports",
+  knowledge: "Knowledge",
+  activity: "Activity",
 };
 
 const SEARCHING_SECTION_ORDER: CommandSection[] = [

@@ -1,0 +1,28 @@
+flowchart TD
+    subgraph CoreFramework [Core Framework]
+        APIGateway[API Gateway]
+        
+        subgraph Orchestration [Orchestration]
+            QueryPlanning[Query Planning Layer]
+            Confidence[Confidence Layer]
+        end
+        
+        subgraph KnowledgeManagement [Knowledge Management]
+            Retrieval[Retrieval Layer]
+            Ranking[Ranking Layer]
+            VectorDB[(Vector Database)]
+        end
+        
+        subgraph Synthesis [Synthesis]
+            Generation[Generation Layer]
+            Citation[Citation Layer]
+        end
+    end
+    
+    APIGateway --> QueryPlanning
+    QueryPlanning --> Retrieval
+    Retrieval <--> VectorDB
+    Retrieval --> Ranking
+    Ranking --> Confidence
+    Confidence --> Generation
+    Generation --> Citation
