@@ -279,6 +279,7 @@ class Settings(BaseSettings):
     # knowledge source sync. Verified via X-Hub-Signature-256 header.
     # Left blank, the endpoint refuses every delivery with 503.
     github_webhook_secret: str = Field(default="", env="GITHUB_WEBHOOK_SECRET")
+    github_webhook_scan_all_branches: bool = Field(default=False, env="GITHUB_WEBHOOK_SCAN_ALL_BRANCHES")
 
     # Data lifecycle — how long completed/failed knowledge job artifacts are
     # kept before the nightly archive sweep reclaims disk space.

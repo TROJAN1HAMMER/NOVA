@@ -66,6 +66,9 @@ celery_app = Celery(
         "app.tasks.report_tasks",
         "app.tasks.maintenance_tasks",
         "app.tasks.archive_tasks",
+        "app.tasks.scan_tasks",
+        "app.tasks.scanner_tasks",
+        "app.tasks.aggregator_tasks",
     ],
 )
 

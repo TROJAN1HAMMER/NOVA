@@ -188,3 +188,69 @@ class TestParseGeneratedExplanation:
     def test_raises_when_top_level_is_not_an_object(self):
         with pytest.raises(json.JSONDecodeError):
             parse_generated_explanation("[1, 2, 3]")
+
+
+class TestBuildIntelligence:
+    @pytest.mark.asyncio
+    async def test_build_intelligence_ungrounded_fallback(self, monkeypatch):
+        from unittest.mock import AsyncMock, patch
+        from app.services.finding_intelligence.intelligence_service import build_intelligence
+        from app.services.knowledge_base import embedding_manager, vector_store
+        from app.services.search_analytics import analytics_service
+        import app.services.finding_intelligence.intelligence_service as fi_module
+
+        finding = _finding(id="11111111-1111-1111-1111-111111111111")
+        mock_db = AsyncMock()
+
+        # Mock embedding, vector_store, metrics, and analytics
+        monkeypatch.setattr(embedding_manager, "embed_query", lambda q: [0.1, 0.2])
+        monkeypatch.setattr(vector_store, "similarity_search", AsyncMock(return_value=[]))
+        monkeypatch.setattr(analytics_service, "log_search", AsyncMock())
+        monkeypatch.setattr(fi_module, "record_rag_operation", lambda *args, **kwargs: None)
+
+        response = await build_intelligence(mock_db, finding)
+        assert response.finding_id == "11111111-1111-1111-1111-111111111111"
+        assert response.grounded is False
+        assert response.note == "Insufficient relevant context found in knowledge base."
+        assert response.why_detected is not None
+        assert "semgrep" in response.why_detected
+
+    @pytest.mark.asyncio
+    async def test_build_intelligence_grounded_template_fallback(self, monkeypatch):
+        from unittest.mock import AsyncMock, MagicMock
+        from app.services.finding_intelligence.intelligence_service import build_intelligence
+        from app.services.knowledge_base import embedding_manager, vector_store
+        from app.services.assistant import rerank_manager
+        from app.services.search_analytics import analytics_service
+        import app.services.finding_intelligence.intelligence_service as fi_module
+
+        finding = _finding(id="22222222-2222-2222-2222-222222222222")
+        mock_db = AsyncMock()
+
+        mock_doc = MagicMock()
+        mock_doc.filename = "security_policy.pdf"
+        mock_chunk = MagicMock()
+        mock_chunk.document_id = "doc-123"
+        mock_chunk.document = mock_doc
+        mock_chunk.page_number = 1
+        mock_chunk.section_path = "Credentials"
+        mock_chunk.heading = "Hardcoded Secrets"
+        mock_chunk.content = "Never store hardcoded secrets in source code."
+
+        candidates = [(mock_chunk, 0.95)]
+
+        monkeypatch.setattr(embedding_manager, "embed_query", lambda q: [0.1, 0.2])
+        monkeypatch.setattr(vector_store, "similarity_search", AsyncMock(return_value=candidates))
+        monkeypatch.setattr(rerank_manager, "rerank", lambda q, docs: [5.0])
+        monkeypatch.setattr(rerank_manager, "normalize_confidence", lambda score: 0.95)
+        monkeypatch.setattr(analytics_service, "log_search", AsyncMock())
+        monkeypatch.setattr(fi_module, "record_rag_operation", lambda *args, **kwargs: None)
+
+        response = await build_intelligence(mock_db, finding)
+        assert response.finding_id == "22222222-2222-2222-2222-222222222222"
+        assert response.grounded is True
+        assert len(response.citations) == 1
+        assert response.citations[0].filename == "security_policy.pdf"
+        assert response.plain_english_explanation is not None
+        assert response.business_impact is not None
+        assert response.recommended_remediation is not None
