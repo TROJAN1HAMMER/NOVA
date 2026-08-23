@@ -17,13 +17,7 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # 1. Drop Security Tables if they exist
-    op.execute("DROP TABLE IF EXISTS findings CASCADE;")
-    op.execute("DROP TABLE IF EXISTS scan_results CASCADE;")
-    op.execute("DROP TABLE IF EXISTS scan_jobs CASCADE;")
-    op.execute("DROP TABLE IF EXISTS risk_factor_weights CASCADE;")
-    op.execute("DROP TABLE IF EXISTS business_modules CASCADE;")
-    op.execute("DROP TABLE IF EXISTS repositories CASCADE;")
+    # 1. Skip dropping Security Tables so they co-exist with new schema
 
     # 2. Create chat_sessions
     op.create_table(

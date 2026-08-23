@@ -12,6 +12,7 @@ import {
   UserCog,
   X,
   Zap,
+  Shield,
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useAuth } from "../../hooks/useAuth";
@@ -22,6 +23,7 @@ const NAV_ITEMS: { to: string; label: string; icon: typeof Sparkles; routeKey?: 
   { to: "/assistant", label: "Assistant", icon: Sparkles, routeKey: "assistant" },
   { to: "/source-studio", label: "Source Studio", icon: FolderPlus, routeKey: "source-studio" },
   { to: "/knowledge", label: "Knowledge Base", icon: BookOpen, routeKey: "knowledge" },
+  { to: "/scans", label: "Security Scans", icon: Shield, routeKey: "scans" },
   { to: "/graph-explorer", label: "Graph Explorer", icon: Network, routeKey: "graph-explorer" },
   { to: "/memory", label: "Memory", icon: Brain, routeKey: "memory" },
   { to: "/knowledge-evolution", label: "Knowledge Evolution", icon: Dna, routeKey: "knowledge-evolution" },
@@ -34,11 +36,9 @@ const NAV_ITEMS: { to: string; label: string; icon: typeof Sparkles; routeKey?: 
 export function Sidebar({
   expanded,
   onToggle,
-  onCollapse,
 }: {
   expanded: boolean;
   onToggle: () => void;
-  onCollapse: () => void;
 }) {
   const { user } = useAuth();
   const visibleNavItems = NAV_ITEMS.filter(
@@ -74,7 +74,6 @@ export function Sidebar({
           <NavLink
             key={to}
             to={to}
-            onClick={onCollapse}
             aria-label={label}
             title={expanded ? undefined : label}
             className={({ isActive }) =>

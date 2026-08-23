@@ -93,7 +93,7 @@ async def submit_repository(
     repo = result.scalar_one_or_none()
 
     if repo is None:
-        clean_ref = ref.replace("refs/heads/", "") if ref else "main"
+        clean_ref = ref.replace("refs/heads/", "") if ref else "HEAD"
         repo = Repository(
             id=uuid.uuid4(),
             name=name,
@@ -105,7 +105,7 @@ async def submit_repository(
         db.add(repo)
         await db.flush()
 
-    clean_ref = ref.replace("refs/heads/", "") if ref else (repo.default_branch or "main")
+    clean_ref = ref.replace("refs/heads/", "") if ref else (repo.default_branch or "HEAD")
 
     # 2. Create queued ScanJob
     scan_jobs = ScanJobRepository(db)

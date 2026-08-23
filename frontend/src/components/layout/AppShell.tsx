@@ -36,7 +36,6 @@ export function AppShell() {
   const [lastPathname, setLastPathname] = useState(location.pathname);
   if (location.pathname !== lastPathname) {
     setLastPathname(location.pathname);
-    setSidebarExpanded(false);
   }
 
   // Escape collapses the expanded rail, same as clicking its own toggle.
@@ -56,7 +55,6 @@ export function AppShell() {
       <Sidebar
         expanded={sidebarExpanded}
         onToggle={() => setSidebarExpanded((current) => !current)}
-        onCollapse={() => setSidebarExpanded(false)}
       />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar onOpenPalette={openPalette} sidebarExpanded={sidebarExpanded} />

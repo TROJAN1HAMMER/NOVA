@@ -4,7 +4,6 @@ import { useAuth } from "../../hooks/useAuth";
 import { ThemeToggle } from "./ThemeToggle";
 import { Button } from "../ui/Button";
 import { cn } from "../../lib/utils";
-import { NovaLogo } from "../brand/NovaLogo";
 
 export function Topbar({
   onOpenPalette,
@@ -23,16 +22,6 @@ export function Topbar({
         sidebarExpanded ? "pl-4 sm:pl-6" : "pl-3",
       )}
     >
-      <div
-        aria-hidden={sidebarExpanded}
-        className={cn(
-          "flex shrink-0 items-center gap-3 transition-[opacity,transform] duration-200 ease-in-out",
-          sidebarExpanded ? "pointer-events-none -translate-x-2 opacity-0" : "translate-x-0 opacity-100",
-        )}
-      >
-        <NovaLogo iconOnly size="sm" />
-      </div>
-
       <div className="flex flex-1 justify-center sm:justify-start">
         <button
           onClick={onOpenPalette}

@@ -23,6 +23,7 @@ export const ROUTE_ROLES = {
   executive: ["admin", "analyst", "read_only"],
   "my-activity": ["admin", "analyst", "developer", "contributor"],
   "admin/users": ["admin"],
+  scans: ["admin", "analyst", "developer", "contributor", "read_only"],
 } as const satisfies Record<string, UserRole[]>;
 
 export type RouteKey = keyof typeof ROUTE_ROLES;

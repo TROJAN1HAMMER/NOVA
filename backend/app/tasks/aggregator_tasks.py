@@ -26,6 +26,7 @@ from app.repositories.report_repository import ReportRepository
 from app.repositories.scan_job_repository import ScanJobRepository
 from app.repositories.scan_result_repository import ScanResultRepository
 from app.services.aggregation.aggregator import aggregate_scanner_results
+from app.services.risk.brs_engine import FactorWeights
 from app.services.ai.templates import get_template
 from app.services.finding_intelligence.intelligence_service import (
     build_intelligence,
@@ -108,7 +109,16 @@ async def _aggregate(
         try:
             # 1. Fetch risk factor weights & custom business modules
             weights_res = await db.execute(select(RiskFactorWeight))
-            weights = list(weights_res.scalars().all())
+            weights_db = list(weights_res.scalars().all())
+            
+            if weights_db:
+                weight_kwargs = {}
+                for w in weights_db:
+                    if hasattr(FactorWeights, w.factor_name):
+                        weight_kwargs[w.factor_name] = w.weight
+                weights = FactorWeights(**weight_kwargs)
+            else:
+                weights = None
 
             modules_res = await db.execute(select(BusinessModule))
             custom_modules = list(modules_res.scalars().all())
