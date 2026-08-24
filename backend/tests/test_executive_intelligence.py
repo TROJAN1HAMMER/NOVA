@@ -103,7 +103,37 @@ class TestRenderEvidenceBlock:
 
 class TestBuildEvidenceSnapshot:
     @pytest.mark.asyncio
-    async def test_build_evidence_snapshot_queries_db(self):
+    async def test_build_evidence_snapshot_empty_db_returns_none_average_and_empty_trends(self):
+        mock_db = AsyncMock()
+
+        # Counts: docs, chunks, logs, brs
+        doc_res = MagicMock()
+        doc_res.scalar_one.return_value = 0
+
+        chunk_res = MagicMock()
+        chunk_res.scalar_one.return_value = 0
+
+        log_res = MagicMock()
+        log_res.scalar_one.return_value = 0
+
+        brs_res = MagicMock()
+        brs_res.scalar_one_or_none.return_value = None
+
+        mock_db.execute.side_effect = [doc_res, chunk_res, log_res, brs_res]
+
+        snapshot = await build_evidence_snapshot(mock_db)
+
+        assert snapshot.total_repositories == 0
+        assert snapshot.total_completed_scans == 0
+        assert snapshot.total_findings == 0
+        assert snapshot.findings_by_severity == {"indexed": 0}
+        assert snapshot.portfolio_average_brs is None
+        assert snapshot.weekly_trend == []
+        assert snapshot.week_over_week is None
+        assert snapshot.has_any_data is False
+
+    @pytest.mark.asyncio
+    async def test_build_evidence_snapshot_computes_real_brs_score(self):
         mock_db = AsyncMock()
 
         doc_res = MagicMock()
@@ -115,7 +145,40 @@ class TestBuildEvidenceSnapshot:
         log_res = MagicMock()
         log_res.scalar_one.return_value = 30
 
-        mock_db.execute.side_effect = [doc_res, chunk_res, log_res]
+        brs_res = MagicMock()
+        brs_res.scalar_one_or_none.return_value = 92.4567
+
+        # 4 weekly trend iterations: 2 queries each (log stats, scan BRS)
+        weekly_responses = []
+        for _ in range(4):
+            log_stats = MagicMock()
+            log_stats.one.return_value = (5, 1)
+            scan_brs = MagicMock()
+            scan_brs.scalar_one_or_none.return_value = 90.0
+            weekly_responses.extend([log_stats, scan_brs])
+
+        # Week over week: tw_log, lw_log, tw_brs, lw_brs
+        tw_log = MagicMock()
+        tw_log.one.return_value = (10, 2)
+        lw_log = MagicMock()
+        lw_log.one.return_value = (8, 1)
+
+        tw_brs = MagicMock()
+        tw_brs.scalar_one_or_none.return_value = 94.0
+        lw_brs = MagicMock()
+        lw_brs.scalar_one_or_none.return_value = 88.0
+
+        mock_db.execute.side_effect = [
+            doc_res,
+            chunk_res,
+            log_res,
+            brs_res,
+            *weekly_responses,
+            tw_log,
+            lw_log,
+            tw_brs,
+            lw_brs,
+        ]
 
         snapshot = await build_evidence_snapshot(mock_db)
 
@@ -123,9 +186,264 @@ class TestBuildEvidenceSnapshot:
         assert snapshot.total_completed_scans == 64
         assert snapshot.total_findings == 30
         assert snapshot.findings_by_severity == {"indexed": 64}
-        assert snapshot.portfolio_average_brs == 98.5
-        assert snapshot.generated_at is not None
-        assert mock_db.execute.call_count == 3
+        assert snapshot.portfolio_average_brs == 92.46
+        assert len(snapshot.weekly_trend) == 4
+        assert snapshot.weekly_trend[0]["scan_count"] == 5
+        assert snapshot.weekly_trend[0]["critical_high_findings"] == 1
+        assert snapshot.weekly_trend[0]["average_brs"] == 90.0
+        assert snapshot.week_over_week == {
+            "scans_this_week": 10,
+            "scans_last_week": 8,
+            "findings_this_week": 2,
+            "findings_last_week": 1,
+            "average_brs_this_week": 94.0,
+            "average_brs_last_week": 88.0,
+        }
+        assert snapshot.has_any_data is True
+
+    @pytest.mark.asyncio
+    async def test_build_evidence_snapshot_handles_null_scores_safely(self):
+        mock_db = AsyncMock()
+
+        doc_res = MagicMock()
+        doc_res.scalar_one.return_value = 2
+
+        chunk_res = MagicMock()
+        chunk_res.scalar_one.return_value = 10
+
+        log_res = MagicMock()
+        log_res.scalar_one.return_value = 0
+
+        brs_res = MagicMock()
+        brs_res.scalar_one_or_none.return_value = None  # NULL BRS
+
+        # Weekly iterations with NULLs
+        weekly_responses = []
+        for _ in range(4):
+            log_stats = MagicMock()
+            log_stats.one.return_value = (0, 0)
+            scan_brs = MagicMock()
+            scan_brs.scalar_one_or_none.return_value = None
+            weekly_responses.extend([log_stats, scan_brs])
+
+        tw_log = MagicMock()
+        tw_log.one.return_value = (0, 0)
+        lw_log = MagicMock()
+        lw_log.one.return_value = (0, 0)
+
+        tw_brs = MagicMock()
+        tw_brs.scalar_one_or_none.return_value = None
+        lw_brs = MagicMock()
+        lw_brs.scalar_one_or_none.return_value = None
+
+        mock_db.execute.side_effect = [
+            doc_res,
+            chunk_res,
+            log_res,
+            brs_res,
+            *weekly_responses,
+            tw_log,
+            lw_log,
+            tw_brs,
+            lw_brs,
+        ]
+
+        snapshot = await build_evidence_snapshot(mock_db)
+
+        assert snapshot.total_repositories == 2
+        assert snapshot.total_completed_scans == 10
+        assert snapshot.portfolio_average_brs is None
+        assert snapshot.has_any_data is True
+        for point in snapshot.weekly_trend:
+            assert point["average_brs"] is None
+        assert snapshot.week_over_week["average_brs_this_week"] is None
+        assert snapshot.week_over_week["average_brs_last_week"] is None
+
+    @pytest.mark.asyncio
+    async def test_weekly_trend_multi_week_chronology_and_counts(self):
+        mock_db = AsyncMock()
+
+        # Counts
+        doc_res = MagicMock()
+        doc_res.scalar_one.return_value = 5
+        chunk_res = MagicMock()
+        chunk_res.scalar_one.return_value = 20
+        log_res = MagicMock()
+        log_res.scalar_one.return_value = 42
+        brs_res = MagicMock()
+        brs_res.scalar_one_or_none.return_value = 91.5
+
+        # 4 weeks distinct data:
+        # Week 1 (oldest): 3 scans, 0 gaps, BRS 85.0
+        # Week 2: 7 scans, 2 gaps, BRS 88.0
+        # Week 3: 12 scans, 1 gap, BRS 92.5
+        # Week 4 (newest): 20 scans, 4 gaps, BRS 95.0
+        week_data = [
+            ((3, 0), 85.0),
+            ((7, 2), 88.0),
+            ((12, 1), 92.5),
+            ((20, 4), 95.0),
+        ]
+        weekly_mocks = []
+        for (scans, gaps), brs_val in week_data:
+            log_mock = MagicMock()
+            log_mock.one.return_value = (scans, gaps)
+            brs_mock = MagicMock()
+            brs_mock.scalar_one_or_none.return_value = brs_val
+            weekly_mocks.extend([log_mock, brs_mock])
+
+        # Week-over-week mocks
+        tw_log = MagicMock()
+        tw_log.one.return_value = (20, 4)
+        lw_log = MagicMock()
+        lw_log.one.return_value = (12, 1)
+        tw_brs = MagicMock()
+        tw_brs.scalar_one_or_none.return_value = 95.0
+        lw_brs = MagicMock()
+        lw_brs.scalar_one_or_none.return_value = 92.5
+
+        mock_db.execute.side_effect = [
+            doc_res,
+            chunk_res,
+            log_res,
+            brs_res,
+            *weekly_mocks,
+            tw_log,
+            lw_log,
+            tw_brs,
+            lw_brs,
+        ]
+
+        snapshot = await build_evidence_snapshot(mock_db)
+
+        # Verify exact 4 trend points
+        assert len(snapshot.weekly_trend) == 4
+
+        # Chronological ordering: week_start of week 0 < week 1 < week 2 < week 3
+        week_dates = [point["week_start"] for point in snapshot.weekly_trend]
+        assert week_dates == sorted(week_dates)
+
+        # Verify point 0 (Week 1)
+        assert snapshot.weekly_trend[0]["scan_count"] == 3
+        assert snapshot.weekly_trend[0]["critical_high_findings"] == 0
+        assert snapshot.weekly_trend[0]["average_brs"] == 85.0
+
+        # Verify point 1 (Week 2)
+        assert snapshot.weekly_trend[1]["scan_count"] == 7
+        assert snapshot.weekly_trend[1]["critical_high_findings"] == 2
+        assert snapshot.weekly_trend[1]["average_brs"] == 88.0
+
+        # Verify point 2 (Week 3)
+        assert snapshot.weekly_trend[2]["scan_count"] == 12
+        assert snapshot.weekly_trend[2]["critical_high_findings"] == 1
+        assert snapshot.weekly_trend[2]["average_brs"] == 92.5
+
+        # Verify point 3 (Week 4)
+        assert snapshot.weekly_trend[3]["scan_count"] == 20
+        assert snapshot.weekly_trend[3]["critical_high_findings"] == 4
+        assert snapshot.weekly_trend[3]["average_brs"] == 95.0
+
+    @pytest.mark.asyncio
+    async def test_week_over_week_comparison_deltas(self):
+        mock_db = AsyncMock()
+
+        doc_res = MagicMock()
+        doc_res.scalar_one.return_value = 10
+        chunk_res = MagicMock()
+        chunk_res.scalar_one.return_value = 50
+        log_res = MagicMock()
+        log_res.scalar_one.return_value = 100
+        brs_res = MagicMock()
+        brs_res.scalar_one_or_none.return_value = 94.0
+
+        weekly_mocks = []
+        for _ in range(4):
+            log_mock = MagicMock()
+            log_mock.one.return_value = (10, 1)
+            brs_mock = MagicMock()
+            brs_mock.scalar_one_or_none.return_value = 90.0
+            weekly_mocks.extend([log_mock, brs_mock])
+
+        # This week vs Last week metrics
+        tw_log = MagicMock()
+        tw_log.one.return_value = (25, 5)  # 25 scans, 5 gaps
+        lw_log = MagicMock()
+        lw_log.one.return_value = (15, 2)  # 15 scans, 2 gaps
+        tw_brs = MagicMock()
+        tw_brs.scalar_one_or_none.return_value = 96.2
+        lw_brs = MagicMock()
+        lw_brs.scalar_one_or_none.return_value = 91.8
+
+        mock_db.execute.side_effect = [
+            doc_res,
+            chunk_res,
+            log_res,
+            brs_res,
+            *weekly_mocks,
+            tw_log,
+            lw_log,
+            tw_brs,
+            lw_brs,
+        ]
+
+        snapshot = await build_evidence_snapshot(mock_db)
+
+        assert snapshot.week_over_week is not None
+        assert snapshot.week_over_week["scans_this_week"] == 25
+        assert snapshot.week_over_week["scans_last_week"] == 15
+        assert snapshot.week_over_week["findings_this_week"] == 5
+        assert snapshot.week_over_week["findings_last_week"] == 2
+        assert snapshot.week_over_week["average_brs_this_week"] == 96.2
+        assert snapshot.week_over_week["average_brs_last_week"] == 91.8
+
+    @pytest.mark.asyncio
+    async def test_time_window_boundary_queries(self):
+        mock_db = AsyncMock()
+
+        doc_res = MagicMock()
+        doc_res.scalar_one.return_value = 1
+        chunk_res = MagicMock()
+        chunk_res.scalar_one.return_value = 1
+        log_res = MagicMock()
+        log_res.scalar_one.return_value = 1
+        brs_res = MagicMock()
+        brs_res.scalar_one_or_none.return_value = 90.0
+
+        weekly_mocks = []
+        for _ in range(4):
+            log_mock = MagicMock()
+            log_mock.one.return_value = (1, 0)
+            brs_mock = MagicMock()
+            brs_mock.scalar_one_or_none.return_value = 90.0
+            weekly_mocks.extend([log_mock, brs_mock])
+
+        tw_log = MagicMock()
+        tw_log.one.return_value = (1, 0)
+        lw_log = MagicMock()
+        lw_log.one.return_value = (0, 0)
+        tw_brs = MagicMock()
+        tw_brs.scalar_one_or_none.return_value = 90.0
+        lw_brs = MagicMock()
+        lw_brs.scalar_one_or_none.return_value = None
+
+        mock_db.execute.side_effect = [
+            doc_res,
+            chunk_res,
+            log_res,
+            brs_res,
+            *weekly_mocks,
+            tw_log,
+            lw_log,
+            tw_brs,
+            lw_brs,
+        ]
+
+        snapshot = await build_evidence_snapshot(mock_db)
+        assert snapshot.has_any_data is True
+        # Total DB execute calls: 4 (counts & BRS) + 8 (4 weekly buckets x 2) + 4 (WoW) = 16
+        assert mock_db.execute.call_count == 16
+
+
 
 
 # ── 2. Citations & Context Formatting Tests ───────────────────────────────────
