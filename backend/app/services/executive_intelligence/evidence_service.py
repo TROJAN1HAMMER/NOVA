@@ -26,7 +26,13 @@ class ExecutiveEvidenceSnapshot:
 
     @property
     def has_any_data(self) -> bool:
-        return True
+        return bool(
+            self.total_repositories > 0
+            or self.total_completed_scans > 0
+            or self.total_findings > 0
+            or self.top_risk_repositories
+            or self.compliance_by_framework
+        )
 
 
 def render_evidence_block(snapshot: ExecutiveEvidenceSnapshot) -> str:
