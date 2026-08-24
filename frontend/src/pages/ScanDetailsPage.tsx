@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Shield, AlertTriangle, Activity, Info, CheckCircle, XCircle } from "lucide-react";
+import { ArrowLeft, Shield, AlertTriangle, Activity, Info, CheckCircle, XCircle, Download, FileText } from "lucide-react";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Card, CardContent, CardHeader } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
@@ -11,14 +11,19 @@ import { Button } from "../components/ui/Button";
 import { StatTile } from "../components/ui/StatTile";
 import { FullPageSpinner } from "../components/ui/Spinner";
 import { useScanStatus, useScanFindings, useScanCompliance } from "../hooks/useScans";
+import { useToast } from "../hooks/useToast";
+import { reportsApi } from "../lib/api/reports";
 import type { FindingResponse } from "../lib/api/scan";
+import type { ReportType } from "../types/api";
 import { cn } from "../lib/utils";
 
 export default function ScanDetailsPage() {
   const { scanId } = useParams<{ scanId: string }>();
   const navigate = useNavigate();
+  const toast = useToast();
   const [activeTab, setActiveTab] = useState<"overview" | "findings" | "compliance">("overview");
   const [selectedFinding, setSelectedFinding] = useState<FindingResponse | null>(null);
+  const [downloadingType, setDownloadingType] = useState<ReportType | null>(null);
 
   const { data: status, isLoading: statusLoading } = useScanStatus(scanId!);
   const { data: findingsData, isLoading: findingsLoading } = useScanFindings(scanId!);
@@ -26,6 +31,22 @@ export default function ScanDetailsPage() {
 
   if (statusLoading) return <FullPageSpinner />;
   if (!status) return <div>Scan not found</div>;
+
+  const handleDownloadReport = async (reportType: ReportType) => {
+    if (!status?.scan_job_id) return;
+    setDownloadingType(reportType);
+    try {
+      const ext = reportType === "pdf" ? "pdf" : (reportType === "csv" ? "csv" : "json");
+      const sanitizedRepo = (status.repository_name || "scan").replace(/[/\\?%*:|"<>]/g, "-");
+      const fileName = `${sanitizedRepo}-${reportType}-${status.scan_job_id.slice(0, 8)}.${ext}`;
+      await reportsApi.download(status.scan_job_id, reportType, fileName);
+      toast.success("Report Downloaded", `${reportType.toUpperCase()} report downloaded successfully.`);
+    } catch (error) {
+      toast.error("Download Failed", error instanceof Error ? error.message : "Could not download report artifact.");
+    } finally {
+      setDownloadingType(null);
+    }
+  };
 
   const renderFindingModalContent = (finding: FindingResponse): ReactNode => (
     <div className="space-y-4">
@@ -63,6 +84,30 @@ export default function ScanDetailsPage() {
         <PageHeader
           title={`Scan Details: ${status.repository_name}`}
           description={`Scan Job ID: ${status.scan_job_id}`}
+          action={
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleDownloadReport("pdf")}
+                isLoading={downloadingType === "pdf"}
+                disabled={!!downloadingType}
+              >
+                <FileText className="size-4" />
+                PDF Report
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleDownloadReport("csv")}
+                isLoading={downloadingType === "csv"}
+                disabled={!!downloadingType}
+              >
+                <Download className="size-4" />
+                CSV
+              </Button>
+            </div>
+          }
         />
       </div>
 
