@@ -51,6 +51,32 @@ export interface AuditLogListResponse {
 }
 
 // ─────────────────────────────────────────────────────────────
+// System Settings & RAG Hyperparameters
+// ─────────────────────────────────────────────────────────────
+
+export interface SystemSettings {
+  "rag.chunk_size": number;
+  "rag.chunk_overlap": number;
+  "rag.temperature": number;
+  "rag.top_k": number;
+  "rag.similarity_threshold": number;
+  "rag.enable_web_search": boolean;
+  "rag.enable_faq_router": boolean;
+  "rag.enable_consensus": boolean;
+  "rag.system_prompt": string;
+  [key: string]: any;
+}
+
+export interface SystemSettingsResponse {
+  settings: SystemSettings;
+}
+
+export interface SingleSettingResponse {
+  key: string;
+  value: any;
+}
+
+// ─────────────────────────────────────────────────────────────
 // Knowledge Base — Documents & Search
 // ─────────────────────────────────────────────────────────────
 
