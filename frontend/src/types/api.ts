@@ -411,6 +411,14 @@ export interface ExecutiveDoneEvent {
 // Knowledge Evolution (Gap Analysis & FAQ Synthesis)
 // ─────────────────────────────────────────────────────────────
 
+export interface KnowledgeEvolutionMetrics {
+  total_queries: number;
+  failure_refusal_rate: number | null;
+  stage_0_match_ratio: number | null;
+  pending_gap_candidates_count: number;
+  active_faq_count: number;
+}
+
 export interface GapCluster {
   id: string;
   query_pattern: string;

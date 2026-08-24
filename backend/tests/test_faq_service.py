@@ -16,6 +16,7 @@ from app.api.v1.endpoints.faq import (
     FAQRuleCreate,
     create_faq as api_create_faq,
     delete_faq as api_delete_faq,
+    get_evolution_metrics as api_get_evolution_metrics,
     get_gap_inbox as api_get_gap_inbox,
     list_faq as api_list_faq,
     promote_draft_faq as api_promote_draft_faq,
@@ -223,6 +224,48 @@ class TestFAQServiceUnit:
         assert deleted is False
         mock_db.delete.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_get_evolution_metrics_empty_db(self):
+        mock_db = AsyncMock()
+
+        stats_mock = MagicMock()
+        stats_mock.one.return_value = (0, 0, 0)
+
+        rules_mock = MagicMock()
+        rules_mock.one.return_value = (0, 0)
+
+        mock_db.execute.side_effect = [stats_mock, rules_mock]
+
+        metrics = await faq_service.get_evolution_metrics(mock_db)
+
+        assert metrics["total_queries"] == 0
+        assert metrics["failure_refusal_rate"] is None
+        assert metrics["stage_0_match_ratio"] is None
+        assert metrics["pending_gap_candidates_count"] == 0
+        assert metrics["active_faq_count"] == 0
+
+    @pytest.mark.asyncio
+    async def test_get_evolution_metrics_populated(self):
+        mock_db = AsyncMock()
+
+        # 100 queries: 10 failures, 40 Stage 0 hits
+        stats_mock = MagicMock()
+        stats_mock.one.return_value = (100, 10, 40)
+
+        # 3 draft rules, 7 active rules
+        rules_mock = MagicMock()
+        rules_mock.one.return_value = (3, 7)
+
+        mock_db.execute.side_effect = [stats_mock, rules_mock]
+
+        metrics = await faq_service.get_evolution_metrics(mock_db)
+
+        assert metrics["total_queries"] == 100
+        assert metrics["failure_refusal_rate"] == 0.10
+        assert metrics["stage_0_match_ratio"] == 0.40
+        assert metrics["pending_gap_candidates_count"] == 3
+        assert metrics["active_faq_count"] == 7
+
 
 # ── 2. FAQ Endpoints Tests ───────────────────────────────────────────────────
 
@@ -403,6 +446,34 @@ class TestFAQEndpoints:
                 await api_promote_draft_faq(rule_id=target_id, current_user=user, db=mock_db)
             assert exc_info.value.status_code == 404
             assert "Draft FAQ rule not found" in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    async def test_api_get_evolution_metrics(self):
+        user = User(
+            id=uuid.uuid4(),
+            email="dev@nova.example",
+            role=UserRole.DEVELOPER,
+            is_active=True,
+            auth_provider=AuthProvider.LOCAL,
+        )
+        mock_db = AsyncMock()
+
+        with patch.object(faq_service, "get_evolution_metrics", new_callable=AsyncMock) as mock_get:
+            mock_get.return_value = {
+                "total_queries": 50,
+                "failure_refusal_rate": 0.04,
+                "stage_0_match_ratio": 0.30,
+                "pending_gap_candidates_count": 2,
+                "active_faq_count": 8,
+            }
+            res = await api_get_evolution_metrics(current_user=user, db=mock_db)
+
+            assert res.total_queries == 50
+            assert res.failure_refusal_rate == 0.04
+            assert res.stage_0_match_ratio == 0.30
+            assert res.pending_gap_candidates_count == 2
+            assert res.active_faq_count == 8
+            mock_get.assert_called_once_with(mock_db)
 
 
 # ── 3. FAQ Permissions Tests ──────────────────────────────────────────────────

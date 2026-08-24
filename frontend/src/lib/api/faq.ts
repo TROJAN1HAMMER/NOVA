@@ -31,3 +31,14 @@ export async function promoteGapRule(ruleId: string): Promise<FAQRuleItem> {
   const { data } = await apiClient.post<FAQRuleItem>(`/faq/gap-inbox/${ruleId}/promote`);
   return data;
 }
+
+export async function fetchKnowledgeEvolutionMetrics() {
+  const { data } = await apiClient.get<{
+    total_queries: number;
+    failure_refusal_rate: number | null;
+    stage_0_match_ratio: number | null;
+    pending_gap_candidates_count: number;
+    active_faq_count: number;
+  }>("/faq/evolution-metrics");
+  return data;
+}
