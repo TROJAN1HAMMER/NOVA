@@ -16,6 +16,7 @@ from app.api.v1.endpoints.reports import router as reports_router
 from app.api.v1.endpoints.repositories import router as repositories_router
 from app.api.v1.endpoints.risk import router as risk_router
 from app.api.v1.endpoints.scan import router as scan_router
+from app.api.v1.endpoints.settings import router as settings_router
 from app.api.v1.endpoints.webhooks import router as webhooks_router
 from app.auth.admin_router import router as auth_admin_router
 from app.auth.router import router as auth_router
@@ -34,6 +35,7 @@ api_router.include_router(faq_router, tags=["FAQ Rules & Gap Inbox"])
 api_router.include_router(executive_intelligence_router, tags=["Executive Intelligence"])
 api_router.include_router(rag_operations_router, tags=["RAG Operations"])
 api_router.include_router(reports_router, tags=["Reports"])
+api_router.include_router(settings_router, tags=["System Settings"])
 api_router.include_router(auth_router, tags=["Auth"])
 api_router.include_router(auth_sso_router, tags=["Auth — SSO"])
 api_router.include_router(auth_admin_router, tags=["Auth — Admin"])
