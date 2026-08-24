@@ -31,9 +31,7 @@ export default function TeamActivityPage() {
     );
   }
 
-  const d = data as any;
-
-  if (!d || (d.members ?? []).length === 0) {
+  if (!data || data.members.length === 0) {
     return (
       <div>
         <PageHeader
@@ -60,21 +58,21 @@ export default function TeamActivityPage() {
         <RevealItem>
           <StatTile
             label="Knowledge Operations"
-            value={d.total_operations ?? d.total_scans ?? 0}
+            value={data.total_scans}
             icon={<Activity className="size-5" />}
           />
         </RevealItem>
         <RevealItem>
           <StatTile
             label="Documents Indexed"
-            value={d.total_documents_processed ?? d.total_findings ?? 0}
+            value={data.total_findings}
             icon={<Database className="size-5" />}
           />
         </RevealItem>
         <RevealItem>
           <StatTile
             label="Contributors"
-            value={d.members.length}
+            value={data.members.length}
             icon={<Users className="size-5" />}
           />
         </RevealItem>
@@ -93,12 +91,11 @@ export default function TeamActivityPage() {
                   <TableHeaderCell>Contributor</TableHeaderCell>
                   <TableHeaderCell>Knowledge Operations</TableHeaderCell>
                   <TableHeaderCell>Documents Processed</TableHeaderCell>
-                  <TableHeaderCell>AI Queries</TableHeaderCell>
-                  <TableHeaderCell>Avg Confidence</TableHeaderCell>
+                  <TableHeaderCell>Avg BRS Score</TableHeaderCell>
                 </tr>
               </TableHead>
               <TableBody>
-                {d.members.map((member: any) => (
+                {data.members.map((member) => (
                   <TableRow key={member.user_id}>
                     <TableCell>
                       <div className="flex items-center gap-2">
@@ -118,21 +115,16 @@ export default function TeamActivityPage() {
                       </div>
                     </TableCell>
                     <TableCell className="tabular-nums">
-                      {member.total_operations ?? member.total_scans ?? 0}
+                      {member.total_scans}
                     </TableCell>
                     <TableCell className="tabular-nums">
-                      {member.total_documents_processed ?? member.total_findings ?? 0}
-                    </TableCell>
-                    <TableCell className="tabular-nums">
-                      {member.total_queries ?? "—"}
+                      {member.total_findings}
                     </TableCell>
                     <TableCell className="tabular-nums">
                       <div className="flex items-center gap-1.5">
                         <Brain className="size-3.5 text-primary" />
-                        {member.average_confidence_score != null
-                          ? `${(member.average_confidence_score * 100).toFixed(1)}%`
-                          : member.average_brs_score != null
-                          ? `${member.average_brs_score.toFixed(1)}`
+                        {member.average_brs_score != null
+                          ? `${member.average_brs_score.toFixed(1)}%`
                           : "—"}
                       </div>
                     </TableCell>

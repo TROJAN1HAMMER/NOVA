@@ -84,7 +84,7 @@ export default function MyActivityPage() {
     );
   }
 
-  if (!data || (data as any).total_operations === 0) {
+  if (!data || data.total_scans === 0) {
     return (
       <div>
         <PageHeader
@@ -100,8 +100,7 @@ export default function MyActivityPage() {
     );
   }
 
-  const d = data as any;
-  const statusEntries = Object.entries(d.jobs_by_status ?? d.scans_by_status ?? {});
+  const statusEntries = Object.entries(data.scans_by_status ?? {});
 
   return (
     <div>
@@ -115,14 +114,14 @@ export default function MyActivityPage() {
         <RevealItem>
           <StatTile
             label="Knowledge Operations"
-            value={d.total_operations ?? d.total_scans ?? 0}
+            value={data.total_scans}
             icon={<Activity className="size-5" />}
           />
         </RevealItem>
         <RevealItem>
           <StatTile
             label="Documents Processed"
-            value={d.total_documents_processed ?? d.total_findings ?? 0}
+            value={data.total_findings}
             icon={<Database className="size-5" />}
           />
         </RevealItem>
@@ -130,8 +129,8 @@ export default function MyActivityPage() {
           <StatTile
             label="Avg Confidence Score"
             value={
-              d.average_confidence_score != null
-                ? `${(d.average_confidence_score * 100).toFixed(1)}%`
+              data.average_brs_score != null
+                ? `${data.average_brs_score.toFixed(1)}%`
                 : "—"
             }
             icon={<Brain className="size-5" />}
@@ -140,11 +139,7 @@ export default function MyActivityPage() {
         <RevealItem>
           <StatTile
             label="Avg Processing Time"
-            value={formatDuration(
-              d.average_processing_time_seconds ??
-                d.average_scan_duration_seconds ??
-                null
-            )}
+            value={formatDuration(data.average_scan_duration_seconds)}
             icon={<Clock className="size-5" />}
           />
         </RevealItem>
@@ -184,19 +179,19 @@ export default function MyActivityPage() {
               <div className="flex flex-col gap-1">
                 <Layers className="size-5 text-cyan-400" />
                 <div className="text-2xl font-extrabold text-foreground">
-                  {d.total_chunks_produced ?? 0}
+                  {data.total_scans}
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  Vector Chunks
+                  Processed Queries
                 </div>
               </div>
               <div className="flex flex-col gap-1">
                 <Network className="size-5 text-primary" />
                 <div className="text-2xl font-extrabold text-foreground">
-                  {d.total_entities_extracted ?? 0}
+                  {data.total_findings}
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  Extracted Entities
+                  Indexed Documents
                 </div>
               </div>
             </CardContent>
@@ -213,51 +208,43 @@ export default function MyActivityPage() {
               <TableHead>
                 <tr>
                   <TableHeaderCell>Source</TableHeaderCell>
-                  <TableHeaderCell>Connector</TableHeaderCell>
                   <TableHeaderCell>Status</TableHeaderCell>
-                  <TableHeaderCell>Chunks</TableHeaderCell>
-                  <TableHeaderCell>Entities</TableHeaderCell>
+                  <TableHeaderCell>Risk Level</TableHeaderCell>
+                  <TableHeaderCell>BRS Score</TableHeaderCell>
                   <TableHeaderCell>Completed</TableHeaderCell>
                 </tr>
               </TableHead>
               <TableBody>
-                {(d.recent_operations ?? d.recent_scans ?? []).map(
-                  (op: any) => (
-                    <TableRow key={op.job_id ?? op.scan_job_id}>
-                      <TableCell className="font-medium">
-                        <div className="flex items-center gap-2">
-                          <FileText className="size-4 text-primary shrink-0" />
-                          <span className="truncate max-w-xs">
-                            {op.document_name ?? op.repository_name ?? "—"}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <ConnectorBadge
-                          type={op.connector_type ?? op.source ?? "doc"}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          tone={STATUS_TONE[op.status] ?? "neutral"}
-                          className="capitalize flex items-center gap-1"
-                        >
-                          {STATUS_ICON[op.status]}
-                          {op.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="tabular-nums text-xs text-cyan-400">
-                        {op.chunks_produced ?? "—"}
-                      </TableCell>
-                      <TableCell className="tabular-nums text-xs text-primary">
-                        {op.entities_extracted ?? "—"}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground text-xs">
-                        {formatDateTime(op.finished_at)}
-                      </TableCell>
-                    </TableRow>
-                  )
-                )}
+                {(data.recent_scans ?? []).map((op) => (
+                  <TableRow key={op.scan_job_id}>
+                    <TableCell className="font-medium">
+                      <div className="flex items-center gap-2">
+                        <FileText className="size-4 text-primary shrink-0" />
+                        <span className="truncate max-w-xs">
+                          {op.repository_name || "—"}
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        tone={STATUS_TONE[op.status] ?? "neutral"}
+                        className="capitalize flex items-center gap-1"
+                      >
+                        {STATUS_ICON[op.status]}
+                        {op.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="tabular-nums text-xs text-primary">
+                      {op.brs_risk_level ?? "—"}
+                    </TableCell>
+                    <TableCell className="tabular-nums text-xs text-cyan-400">
+                      {op.brs_score != null ? op.brs_score.toFixed(1) : "—"}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-xs">
+                      {formatDateTime(op.finished_at)}
+                    </TableCell>
+                  </TableRow>
+                ))}
               </TableBody>
             </Table>
           </Card>

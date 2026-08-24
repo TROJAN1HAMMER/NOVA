@@ -10,11 +10,11 @@ import { useKnowledgeDocuments } from "../../hooks/useKnowledge";
 export const StatHighlights = memo(function StatHighlights() {
   const { data } = useKnowledgeDocuments({ limit: 100 });
 
-  const docs = (data as any)?.documents ?? [];
-  const totalDocs = (data as any)?.total ?? docs.length;
-  const indexed = docs.filter((d: any) => d.status === "indexed").length;
-  const processing = docs.filter((d: any) => d.status === "processing").length;
-  const totalChunks = docs.reduce((acc: number, d: any) => acc + (d.chunk_count ?? 0), 0);
+  const docs = data?.documents ?? [];
+  const totalDocs = data?.total ?? docs.length;
+  const indexed = docs.filter((d) => d.status === "indexed").length;
+  const processing = docs.filter((d) => d.status === "processing").length;
+  const totalChunks = docs.reduce((acc, d) => acc + (d.chunk_count ?? 0), 0);
 
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

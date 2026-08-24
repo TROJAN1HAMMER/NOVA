@@ -288,89 +288,98 @@ export interface MemoryState {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Knowledge Activity (My Activity + Team Activity)
+// Activity Analytics (My Activity + Team Activity)
 // ─────────────────────────────────────────────────────────────
 
-export interface RecentKnowledgeOperation {
-  job_id: string;
-  document_name: string;
-  connector_type: KnowledgeDocumentType;
-  status: KnowledgeJobStatus;
-  chunks_produced: number | null;
-  entities_extracted: number | null;
+export interface RecentScanSummary {
+  scan_job_id: string;
+  repository_name: string;
+  status: string;
+  brs_score: number | null;
+  brs_risk_level: string | null;
   finished_at: string | null;
 }
 
-export interface MyKnowledgeActivitySummary {
-  total_operations: number;
-  jobs_by_status: Record<string, number>;
-  total_documents_processed: number;
-  total_chunks_produced: number;
-  total_entities_extracted: number;
-  average_processing_time_seconds: number | null;
-  average_confidence_score: number | null;
-  recent_operations: RecentKnowledgeOperation[];
+export interface MyActivitySummary {
+  total_scans: number;
+  scans_by_status: Record<string, number>;
+  total_findings: number;
+  findings_by_severity: Record<string, number>;
+  average_scan_duration_seconds: number | null;
+  average_brs_score: number | null;
+  recent_scans: RecentScanSummary[];
 }
 
 export interface TeamMemberActivity {
   user_id: string;
   email: string;
   full_name: string | null;
-  total_operations: number;
-  total_documents_processed: number;
-  total_queries: number;
-  average_confidence_score: number | null;
+  total_scans: number;
+  total_findings: number;
+  average_brs_score: number | null;
 }
 
-export interface TeamKnowledgeActivitySummary {
-  total_operations: number;
-  total_documents_processed: number;
+export interface TeamActivitySummary {
+  total_scans: number;
+  total_findings: number;
   members: TeamMemberActivity[];
 }
+
+// Backward-compatibility aliases
+export type MyKnowledgeActivitySummary = MyActivitySummary;
+export type TeamKnowledgeActivitySummary = TeamActivitySummary;
 
 // ─────────────────────────────────────────────────────────────
 // Executive Intelligence
 // ─────────────────────────────────────────────────────────────
 
-export interface KnowledgeSourceHealth {
-  source_id: string;
-  source_name: string;
-  connector_type: KnowledgeDocumentType;
-  chunk_count: number;
-  entity_count: number;
-  last_ingested_at: string | null;
-  health_score: number;
+export interface RepositoryRiskEvidence {
+  repository_id: string;
+  repository_name: string;
+  latest_brs_score: number;
+  latest_brs_risk_level: string | null;
+  latest_scan_finished_at: string | null;
 }
 
-export interface WeeklyKnowledgeTrendPoint {
+export interface ComplianceFrameworkEvidence {
+  framework_key: string;
+  framework_name: string;
+  compliant_repo_count: number;
+  non_compliant_repo_count: number;
+  total_violations: number;
+}
+
+export interface WeeklyTrendPoint {
   week_start: string;
-  operations_count: number;
-  documents_indexed: number;
-  average_confidence: number | null;
-  gap_clusters_identified: number;
+  scan_count: number;
+  average_brs: number | null;
+  critical_high_findings: number;
 }
 
-export interface WeekOverWeekKnowledgeDelta {
-  operations_this_week: number;
-  operations_last_week: number;
-  documents_this_week: number;
-  documents_last_week: number;
-  average_confidence_this_week: number | null;
-  average_confidence_last_week: number | null;
+export interface WeekOverWeekDelta {
+  scans_this_week: number;
+  scans_last_week: number;
+  findings_this_week: number;
+  findings_last_week: number;
+  average_brs_this_week: number | null;
+  average_brs_last_week: number | null;
 }
 
 export interface ExecutiveEvidenceSnapshot {
   generated_at: string;
-  total_knowledge_sources: number;
-  total_operations: number;
-  total_documents_indexed: number;
-  total_chunks: number;
-  total_entities: number;
-  portfolio_average_confidence: number | null;
-  top_knowledge_sources: KnowledgeSourceHealth[];
-  weekly_trend: WeeklyKnowledgeTrendPoint[];
-  week_over_week: WeekOverWeekKnowledgeDelta | null;
+  total_repositories: number;
+  total_completed_scans: number;
+  total_findings: number;
+  findings_by_severity: Record<string, number>;
+  portfolio_average_brs: number | null;
+  top_risk_repositories?: RepositoryRiskEvidence[];
+  compliance_by_framework?: ComplianceFrameworkEvidence[];
+  weekly_trend: WeeklyTrendPoint[];
+  week_over_week: WeekOverWeekDelta | null;
 }
+
+export type WeeklyKnowledgeTrendPoint = WeeklyTrendPoint;
+export type WeekOverWeekKnowledgeDelta = WeekOverWeekDelta;
 
 export interface ExecutiveCitation {
   document_id: string;
