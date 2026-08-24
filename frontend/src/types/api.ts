@@ -6,7 +6,7 @@
 // Auth & Users
 // ─────────────────────────────────────────────────────────────
 
-export type UserRole = "admin" | "analyst" | "developer" | "contributor" | "read_only";
+export type UserRole = "admin" | "security_engineer" | "developer" | "auditor" | "read_only";
 
 export interface User {
   id: string;

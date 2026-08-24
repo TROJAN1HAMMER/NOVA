@@ -3,36 +3,42 @@ import type { UserRole } from "../types/api";
 // NOVA AEKOF platform roles — maps to UserRole in types/api.ts
 export const ROLE_DISPLAY_NAMES: Record<UserRole, string> = {
   admin: "Platform Administrator",
-  analyst: "AI Systems Analyst",
-  developer: "Knowledge Engineer",
-  contributor: "Knowledge Contributor",
-  read_only: "Observer",
+  security_engineer: "AI Systems Engineer",
+  developer: "Knowledge Analyst",
+  auditor: "Executive / Auditor",
+  read_only: "Read Only",
 };
 
-export const ALL_ROLES: UserRole[] = ["admin", "analyst", "developer", "contributor", "read_only"];
+export const ALL_ROLES: UserRole[] = [
+  "admin",
+  "security_engineer",
+  "developer",
+  "auditor",
+  "read_only",
+];
 
 export const ROUTE_ROLES = {
-  assistant: ["admin", "analyst", "developer", "contributor", "read_only"],
-  "source-studio": ["admin", "analyst", "developer", "contributor"],
-  knowledge: ["admin", "analyst", "developer", "contributor", "read_only"],
-  "graph-explorer": ["admin", "analyst", "developer", "read_only"],
-  memory: ["admin", "analyst", "developer", "read_only"],
-  "knowledge-evolution": ["admin", "analyst", "developer"],
-  "rag-operations": ["admin", "analyst"],
-  benchmarks: ["admin", "analyst", "read_only"],
-  executive: ["admin", "analyst", "read_only"],
-  "my-activity": ["admin", "analyst", "developer", "contributor"],
+  assistant: ["admin", "security_engineer", "developer", "auditor", "read_only"],
+  "source-studio": ["admin", "security_engineer", "developer"],
+  knowledge: ["admin", "security_engineer", "developer", "auditor", "read_only"],
+  "graph-explorer": ["admin", "security_engineer", "developer", "auditor", "read_only"],
+  memory: ["admin", "security_engineer", "developer", "auditor", "read_only"],
+  "knowledge-evolution": ["admin", "security_engineer", "developer"],
+  "rag-operations": ["admin", "security_engineer", "auditor"],
+  benchmarks: ["admin", "security_engineer", "auditor", "read_only"],
+  executive: ["admin", "security_engineer", "auditor", "read_only"],
+  "my-activity": ["admin", "security_engineer", "developer", "auditor", "read_only"],
   "admin/users": ["admin"],
-  scans: ["admin", "analyst", "developer", "contributor", "read_only"],
+  scans: ["admin", "security_engineer", "developer", "auditor", "read_only"],
 } as const satisfies Record<string, UserRole[]>;
 
 export type RouteKey = keyof typeof ROUTE_ROLES;
 
 export const DEFAULT_ROUTE_FOR_ROLE: Record<UserRole, string> = {
   admin: "/assistant",
-  analyst: "/assistant",
+  security_engineer: "/assistant",
   developer: "/assistant",
-  contributor: "/source-studio",
+  auditor: "/executive",
   read_only: "/assistant",
 };
 
