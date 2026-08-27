@@ -41,18 +41,18 @@ async def get_team_activity(db: AsyncSession) -> TeamActivitySummary:
     total_searches = search_count_res.scalar_one() or 0
 
     members_res = await db.execute(
-        select(User.id, User.email, User.username).limit(10)
+        select(User.id, User.email, User.full_name).limit(10)
     )
     members = [
         TeamMemberActivity(
             user_id=u_id,
             email=email,
-            full_name=username,
+            full_name=full_name,
             total_scans=1,
             total_findings=0,
             average_brs_score=98.0,
         )
-        for u_id, email, username in members_res.all()
+        for u_id, email, full_name in members_res.all()
     ]
 
     return TeamActivitySummary(

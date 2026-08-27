@@ -19,6 +19,7 @@ import { RevealSection, RevealItem } from "../components/landing/RevealSection";
 import { ExecutiveIntelligencePanel } from "../components/executive/ExecutiveIntelligencePanel";
 import { useKnowledgeDocuments } from "../hooks/useKnowledge";
 import { useMyActivity } from "../hooks/useAnalytics";
+import type { KnowledgeDocument, WeekOverWeekDelta, WeeklyTrendPoint } from "../types/api";
 
 function confidenceBadge(score: number | null): { tone: "success" | "warning" | "danger" | "neutral"; label: string } {
   if (score == null) return { tone: "neutral", label: "No data" };
@@ -27,27 +28,37 @@ function confidenceBadge(score: number | null): { tone: "success" | "warning" | 
   return { tone: "danger", label: "Low Confidence" };
 }
 
+interface ExecutiveSummary {
+  totalSources: number;
+  totalDocuments: number;
+  totalOperations: number;
+  totalChunks: number;
+  confidence: number | null;
+  topSources: KnowledgeDocument[];
+  weeklyTrend: WeeklyTrendPoint[];
+  weekOverWeek: WeekOverWeekDelta | null;
+}
+
 export default function ExecutiveDashboardPage() {
   const { data: docsData, isLoading: docsLoading } = useKnowledgeDocuments({ limit: 200 });
   const { data: activityData, isLoading: activityLoading } = useMyActivity();
 
   const isLoading = docsLoading || activityLoading;
 
-  const summary = useMemo(() => {
+  const summary: ExecutiveSummary = useMemo(() => {
     const docs = docsData?.documents ?? [];
     const indexed = docs.filter((d) => d.status === "indexed");
     const totalChunks = indexed.reduce((sum, d) => sum + (d.chunk_count ?? 0), 0);
-    const act = activityData as any;
 
     return {
       totalSources: docsData?.total ?? docs.length,
       totalDocuments: indexed.length,
-      totalOperations: act?.total_operations ?? act?.total_scans ?? 0,
+      totalOperations: activityData?.total_scans ?? 0,
       totalChunks,
-      confidence: act?.average_confidence_score ?? null,
+      confidence: activityData?.average_brs_score != null ? activityData.average_brs_score / 100 : null,
       topSources: indexed.slice(0, 5),
-      weeklyTrend: [] as any[],
-      weekOverWeek: null as any,
+      weeklyTrend: [],
+      weekOverWeek: null,
     };
   }, [docsData, activityData]);
 
@@ -84,7 +95,7 @@ export default function ExecutiveDashboardPage() {
   }
 
   const confidenceInfo = confidenceBadge(summary.confidence);
-  const wow = summary.weekOverWeek as any;
+  const wow = summary.weekOverWeek;
 
   return (
     <div>
@@ -152,13 +163,13 @@ export default function ExecutiveDashboardPage() {
                   <span>
                     This week:{" "}
                     <strong className="text-foreground">
-                      {wow.operations_this_week ?? wow.scans_this_week ?? 0} ops
+                      {wow.scans_this_week} ops
                     </strong>
                   </span>
                   <span>
                     Last week:{" "}
                     <strong className="text-foreground">
-                      {wow.operations_last_week ?? wow.scans_last_week ?? 0} ops
+                      {wow.scans_last_week} ops
                     </strong>
                   </span>
                 </div>
@@ -178,12 +189,12 @@ export default function ExecutiveDashboardPage() {
             />
             <CardContent>
               <ul className="space-y-3">
-                {(summary.topSources as any[]).slice(0, 5).map((src: any, i: number) => (
-                  <li key={src.id ?? src.source_id ?? i} className="flex items-center justify-between gap-2 text-sm">
+                {summary.topSources.slice(0, 5).map((src, i) => (
+                  <li key={src.id ?? i} className="flex items-center justify-between gap-2 text-sm">
                     <div className="flex items-center gap-2 min-w-0">
                       <FileText className="size-4 text-primary shrink-0" />
                       <span className="truncate font-medium text-foreground">
-                        {src.filename ?? src.source_name ?? src.repository_name ?? `Source ${i + 1}`}
+                        {src.filename}
                       </span>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
@@ -234,11 +245,11 @@ export default function ExecutiveDashboardPage() {
               <CardHeader title="Weekly Knowledge Trend" description="Operations and documents indexed per week." />
               <CardContent>
                 <div className="flex gap-4 overflow-x-auto pb-1">
-                  {(summary.weeklyTrend as any[]).map((pt: any) => (
+                  {summary.weeklyTrend.map((pt) => (
                     <div key={pt.week_start} className="flex flex-col items-center gap-1 min-w-[72px]">
-                      <div className="w-10 rounded-t-md bg-primary/60" style={{ height: `${Math.min(80, (pt.operations_count ?? pt.scan_count ?? 0) * 8)}px`, minHeight: "4px" }} />
-                      <span className="text-[10px] text-muted-foreground">{pt.week_start?.slice(5) ?? ""}</span>
-                      <span className="text-xs font-semibold">{pt.operations_count ?? pt.scan_count ?? 0}</span>
+                      <div className="w-10 rounded-t-md bg-primary/60" style={{ height: `${Math.min(80, pt.scan_count * 8)}px`, minHeight: "4px" }} />
+                      <span className="text-[10px] text-muted-foreground">{pt.week_start.slice(5)}</span>
+                      <span className="text-xs font-semibold">{pt.scan_count}</span>
                     </div>
                   ))}
                 </div>

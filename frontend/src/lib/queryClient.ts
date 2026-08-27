@@ -47,4 +47,5 @@ export const queryKeys = {
   // Admin
   adminUsers: (params?: unknown) => ["admin-users", params ?? {}] as const,
   auditLog: (params?: unknown) => ["audit-log", params ?? {}] as const,
+  systemSettings: () => ["system-settings"] as const,
 };

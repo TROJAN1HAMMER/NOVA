@@ -71,5 +71,38 @@ class FAQService:
             return True
         return False
 
+    async def get_evolution_metrics(self, db: AsyncSession) -> dict:
+        """Computes knowledge evolution & self-healing metrics across search analytics and FAQ rules."""
+        from sqlalchemy import case
+
+        stats_query = select(
+            func.count(SearchAnalyticsLog.id),
+            func.sum(case(((SearchAnalyticsLog.result_count == 0) | (SearchAnalyticsLog.fallback_triggered == True), 1), else_=0)),
+            func.sum(case((SearchAnalyticsLog.top_score == 1.0, 1), else_=0)),
+        )
+        total_queries, failure_count, stage_0_count = (await db.execute(stats_query)).one()
+        total_queries = total_queries or 0
+        failure_count = int(failure_count or 0)
+        stage_0_count = int(stage_0_count or 0)
+
+        failure_rate = round(failure_count / total_queries, 4) if total_queries > 0 else None
+        stage_0_ratio = round(stage_0_count / total_queries, 4) if total_queries > 0 else None
+
+        rules_stats = select(
+            func.sum(case((FAQRule.is_draft == True, 1), else_=0)),
+            func.sum(case(((FAQRule.is_active == True) & (FAQRule.is_draft == False), 1), else_=0)),
+        )
+        draft_count, active_count = (await db.execute(rules_stats)).one()
+        draft_count = int(draft_count or 0)
+        active_count = int(active_count or 0)
+
+        return {
+            "total_queries": total_queries,
+            "failure_refusal_rate": failure_rate,
+            "stage_0_match_ratio": stage_0_ratio,
+            "pending_gap_candidates_count": draft_count,
+            "active_faq_count": active_count,
+        }
+
 
 faq_service = FAQService()

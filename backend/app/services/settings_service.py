@@ -64,5 +64,30 @@ class SettingsService:
         await db.commit()
         return await self.get_settings(db)
 
+    async def update_setting(self, db: AsyncSession, key: str, value: any) -> any:
+        result = await db.execute(select(SystemSetting).where(SystemSetting.key == key))
+        row = result.scalar_one_or_none()
+        if row:
+            row.value = value
+        else:
+            db.add(SystemSetting(key=key, value=value))
+        await db.commit()
+        return await self.get_setting(db, key)
+
+    async def reset_settings(self, db: AsyncSession, keys: list[str] | None = None) -> dict:
+        if keys:
+            for k in keys:
+                result = await db.execute(select(SystemSetting).where(SystemSetting.key == k))
+                row = result.scalar_one_or_none()
+                if row:
+                    await db.delete(row)
+        else:
+            result = await db.execute(select(SystemSetting))
+            rows = result.scalars().all()
+            for row in rows:
+                await db.delete(row)
+        await db.commit()
+        return await self.get_settings(db)
+
 
 settings_service = SettingsService()

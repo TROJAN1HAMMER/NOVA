@@ -3,7 +3,7 @@ AEKOF — FAQ Rules & Knowledge Gap Inbox Endpoints
 """
 
 import uuid
-from typing import Annotated
+from typing import Annotated, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,6 +31,14 @@ class FAQRuleResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class KnowledgeEvolutionMetricsResponse(BaseModel):
+    total_queries: int
+    failure_refusal_rate: Optional[float] = None
+    stage_0_match_ratio: Optional[float] = None
+    pending_gap_candidates_count: int
+    active_faq_count: int
+
+
 @router.get("/faq", response_model=list[FAQRuleResponse])
 async def list_faq(
     current_user: Annotated[User, Depends(require_permission(Permission.KNOWLEDGE_READ))],
@@ -38,6 +46,15 @@ async def list_faq(
 ):
     rules = await faq_service.list_rules(db, include_drafts=False)
     return rules
+
+
+@router.get("/faq/evolution-metrics", response_model=KnowledgeEvolutionMetricsResponse)
+async def get_evolution_metrics(
+    current_user: Annotated[User, Depends(require_permission(Permission.KNOWLEDGE_READ))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    metrics = await faq_service.get_evolution_metrics(db)
+    return KnowledgeEvolutionMetricsResponse(**metrics)
 
 
 @router.post("/faq", response_model=FAQRuleResponse, status_code=status.HTTP_201_CREATED)

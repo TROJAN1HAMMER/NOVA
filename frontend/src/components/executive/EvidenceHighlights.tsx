@@ -64,11 +64,10 @@ function ConfidenceTrendIndicator({
 export function EvidenceHighlights({ evidence }: { evidence: ExecutiveEvidenceSnapshot }) {
   const chartTheme = useChartTheme();
 
-  const d = evidence as any;
-  const totalOps = d.total_operations ?? d.total_completed_scans ?? 0;
-  const totalSources = d.total_knowledge_sources ?? d.total_repositories ?? 0;
+  const totalOps = evidence.total_completed_scans;
+  const totalSources = evidence.total_repositories;
 
-  if (totalOps === 0) {
+  if (totalOps === 0 && totalSources === 0) {
     return (
       <p className="text-xs text-muted-foreground">
         No knowledge operations completed yet.
@@ -76,11 +75,11 @@ export function EvidenceHighlights({ evidence }: { evidence: ExecutiveEvidenceSn
     );
   }
 
-  const confidence = d.portfolio_average_confidence ?? null;
+  const confidence = evidence.portfolio_average_brs != null ? evidence.portfolio_average_brs / 100 : null;
   const tier = confidenceTier(confidence);
   const confidenceValue = confidence != null ? confidence * 100 : null;
 
-  const wow = d.week_over_week as any;
+  const wow = evidence.week_over_week;
 
   return (
     <div className="space-y-4 rounded-lg border border-border bg-muted/30 p-4">
@@ -98,8 +97,8 @@ export function EvidenceHighlights({ evidence }: { evidence: ExecutiveEvidenceSn
           />
           {wow && (
             <ConfidenceTrendIndicator
-              current={wow.average_confidence_this_week ?? null}
-              previous={wow.average_confidence_last_week ?? null}
+              current={wow.average_brs_this_week != null ? wow.average_brs_this_week / 100 : null}
+              previous={wow.average_brs_last_week != null ? wow.average_brs_last_week / 100 : null}
             />
           )}
         </div>
@@ -108,7 +107,7 @@ export function EvidenceHighlights({ evidence }: { evidence: ExecutiveEvidenceSn
           <div>
             <p className="text-xs text-muted-foreground">Documents indexed</p>
             <p className="text-lg font-semibold tabular-nums">
-              {d.total_documents_indexed ?? 0}
+              {totalSources}
             </p>
           </div>
           {wow && (
@@ -116,13 +115,13 @@ export function EvidenceHighlights({ evidence }: { evidence: ExecutiveEvidenceSn
               <div>
                 <p className="text-xs text-muted-foreground">Operations this week</p>
                 <p className="text-lg font-semibold tabular-nums">
-                  {wow.operations_this_week ?? wow.scans_this_week ?? 0}
+                  {wow.scans_this_week}
                 </p>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">vs. last week</p>
                 <p className="text-lg font-semibold tabular-nums">
-                  {wow.operations_last_week ?? wow.scans_last_week ?? 0}
+                  {wow.scans_last_week}
                 </p>
               </div>
             </>
@@ -132,24 +131,24 @@ export function EvidenceHighlights({ evidence }: { evidence: ExecutiveEvidenceSn
 
       <ConfidenceCountBadge tier={tier} count={totalOps} />
 
-      {(d.top_knowledge_sources ?? d.top_risk_repositories ?? []).length > 0 && (
+      {(evidence.top_risk_repositories ?? []).length > 0 && (
         <div>
           <p className="mb-1 text-xs font-medium text-muted-foreground">Top knowledge sources</p>
           <div className="flex flex-wrap gap-1.5">
-            {(d.top_knowledge_sources ?? d.top_risk_repositories ?? [])
+            {(evidence.top_risk_repositories ?? [])
               .slice(0, 5)
-              .map((src: any, i: number) => (
+              .map((src, i) => (
                 <Badge
-                  key={src.source_id ?? src.repository_id ?? i}
+                  key={src.repository_id ?? i}
                   tone={
-                    (src.health_score ?? 1) >= 0.8
+                    src.latest_brs_score >= 80
                       ? "success"
-                      : (src.health_score ?? 1) >= 0.5
+                      : src.latest_brs_score >= 50
                       ? "warning"
                       : "danger"
                   }
                 >
-                  {src.source_name ?? src.repository_name ?? `Source ${i + 1}`}
+                  {src.repository_name}
                 </Badge>
               ))}
           </div>
