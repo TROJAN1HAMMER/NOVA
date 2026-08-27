@@ -68,3 +68,28 @@ class SearchResponse(BaseModel):
     query: str
     took_ms: float
     results: list[SearchResultItem]
+
+
+class GraphNodeSchema(BaseModel):
+    id: str
+    label: str
+    entity_type: str
+    document_id: Optional[str] = None
+    chunk_count: int = 1
+    confidence: float = 0.95
+
+
+class GraphRelationSchema(BaseModel):
+    id: str
+    source_id: str
+    target_id: str
+    relation_type: str
+    weight: float = 1.0
+
+
+class GraphSnapshotResponse(BaseModel):
+    nodes: list[GraphNodeSchema]
+    relations: list[GraphRelationSchema]
+    total_nodes: int
+    total_relations: int
+    generated_at: str

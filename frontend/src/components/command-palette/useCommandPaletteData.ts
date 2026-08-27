@@ -158,7 +158,7 @@ export function useCommandPaletteData(enabled: boolean) {
         title: "Source Studio",
         subtitle: "Ingest new knowledge sources",
         icon: Database,
-        keywords: ["ingest", "upload", "source", "import", "knowledge"],
+        keywords: ["source studio", "source", "studio", "upload", "ingest", "import", "knowledge"],
         perform: ({ navigate, close }: CommandPerformContext) => {
           navigate("/source-studio");
           close();
@@ -182,21 +182,21 @@ export function useCommandPaletteData(enabled: boolean) {
         title: "Knowledge Graph",
         subtitle: "Explore entity relationships",
         icon: Network,
-        keywords: ["graph", "entities", "relations", "knowledge graph"],
+        keywords: ["graph", "entities", "relations", "knowledge graph", "graph explorer"],
         perform: ({ navigate, close }: CommandPerformContext) => {
-          navigate("/graph");
+          navigate("/graph-explorer");
           close();
         },
       },
       {
-        id: "nav:search",
+        id: "nav:knowledge",
         section: "navigation" as const,
-        title: "Knowledge Search",
-        subtitle: "Semantic search across indexed documents",
+        title: "Knowledge Base",
+        subtitle: "Corpus documents, search & instant FAQ rules",
         icon: Search,
-        keywords: ["search", "find", "semantic", "retrieval"],
+        keywords: ["knowledge", "knowledge base", "search", "find", "semantic", "faq", "docs"],
         perform: ({ navigate, close }: CommandPerformContext) => {
-          navigate("/search");
+          navigate("/knowledge");
           close();
         },
       },

@@ -18,7 +18,6 @@ if TYPE_CHECKING:
     from app.models.scan_job import ScanJob
     from app.models.user import User
 
-
 class Repository(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "repositories"
 

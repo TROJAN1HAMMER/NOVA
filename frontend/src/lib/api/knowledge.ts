@@ -1,5 +1,10 @@
 import { apiClient } from "./client";
-import type { KnowledgeDocumentListResponse, KnowledgeDocument, KnowledgeSearchResponse } from "../../types/api";
+import type {
+  KnowledgeDocumentListResponse,
+  KnowledgeDocument,
+  KnowledgeSearchResponse,
+  GraphSnapshot,
+} from "../../types/api";
 
 export interface KnowledgeDocumentListParams {
   document_type?: string;
@@ -47,6 +52,13 @@ export const knowledgeApi = {
 
   search: async (payload: KnowledgeSearchPayload): Promise<KnowledgeSearchResponse> => {
     const response = await apiClient.post<KnowledgeSearchResponse>("/knowledge/search", payload);
+    return response.data;
+  },
+
+  getGraph: async (documentId?: string): Promise<GraphSnapshot> => {
+    const response = await apiClient.get<GraphSnapshot>("/knowledge/graph", {
+      params: documentId ? { document_id: documentId } : undefined,
+    });
     return response.data;
   },
 };

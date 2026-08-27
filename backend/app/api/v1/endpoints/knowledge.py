@@ -30,6 +30,9 @@ from app.schemas.knowledge import (
     DocumentListItem,
     DocumentListResponse,
     DocumentUploadResponse,
+    GraphNodeSchema,
+    GraphRelationSchema,
+    GraphSnapshotResponse,
     SearchRequest,
     SearchResponse,
 )
@@ -172,3 +175,67 @@ async def search_knowledge(
         user_id=current_user.id,
     )
     return SearchResponse(**result)
+
+
+@router.get("/knowledge/graph", response_model=GraphSnapshotResponse)
+async def get_knowledge_graph(
+    _current_user: Annotated[User, Depends(require_permission(Permission.KNOWLEDGE_READ))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    document_id: Optional[uuid.UUID] = None,
+):
+    """
+    Retrieve the symbolic entity-relation knowledge graph snapshot.
+    Returns entities as nodes and knowledge relations as edges.
+    """
+    from datetime import datetime, timezone
+    from sqlalchemy import select
+    from app.models.knowledge import KnowledgeEntity, KnowledgeRelation
+    from app.schemas.knowledge import (
+        GraphNodeSchema,
+        GraphRelationSchema,
+        GraphSnapshotResponse,
+    )
+
+    entity_query = select(KnowledgeEntity)
+    if document_id:
+        entity_query = entity_query.where(KnowledgeEntity.document_id == document_id)
+    entity_result = await db.execute(entity_query)
+    entities = entity_result.scalars().all()
+
+    entity_ids = {e.id for e in entities}
+
+    relation_query = select(KnowledgeRelation)
+    relation_result = await db.execute(relation_query)
+    all_relations = relation_result.scalars().all()
+
+    nodes = [
+        GraphNodeSchema(
+            id=str(e.id),
+            label=e.entity_name,
+            entity_type=e.entity_type,
+            document_id=str(e.document_id),
+            chunk_count=e.mention_count,
+            confidence=0.95,
+        )
+        for e in entities
+    ]
+
+    edges = [
+        GraphRelationSchema(
+            id=str(r.id),
+            source_id=str(r.source_entity_id),
+            target_id=str(r.target_entity_id),
+            relation_type=r.relation_type,
+            weight=1.0,
+        )
+        for r in all_relations
+        if r.source_entity_id in entity_ids and r.target_entity_id in entity_ids
+    ]
+
+    return GraphSnapshotResponse(
+        nodes=nodes,
+        relations=edges,
+        total_nodes=len(nodes),
+        total_relations=len(edges),
+        generated_at=datetime.now(timezone.utc).isoformat(),
+    )

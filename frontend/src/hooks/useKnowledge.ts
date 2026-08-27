@@ -52,3 +52,11 @@ export function useSearchKnowledge() {
     mutationFn: (payload: KnowledgeSearchPayload) => knowledgeApi.search(payload),
   });
 }
+
+export function useGraphSnapshot(documentId?: string) {
+  return useQuery({
+    queryKey: ["knowledge-graph", documentId ?? "all"],
+    queryFn: () => knowledgeApi.getGraph(documentId),
+    staleTime: 30_000,
+  });
+}

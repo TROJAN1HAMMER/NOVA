@@ -1,30 +1,66 @@
-import { useState } from "react";
-import { Network, Search } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Network, Search, Sparkles } from "lucide-react";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Card, CardContent, CardHeader } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
-
-interface EntityNode {
-  id: string;
-  name: string;
-  type: "ORG" | "POLICY" | "CONCEPT" | "PRODUCT";
-  relations: number;
-}
-
-const SAMPLE_ENTITIES: EntityNode[] = [
-  { id: "e1", name: "AEKOF Architecture", type: "CONCEPT", relations: 12 },
-  { id: "e2", name: "Isotonic Calibrator", type: "CONCEPT", relations: 8 },
-  { id: "e3", name: "HDBSCAN Failure Clusterer", type: "CONCEPT", relations: 6 },
-  { id: "e4", name: "Exa Web Fallback", type: "PRODUCT", relations: 5 },
-  { id: "e5", name: "PostgreSQL pgvector", type: "PRODUCT", relations: 14 },
-  { id: "e6", name: "GraphRAG Entity Traversal", type: "POLICY", relations: 9 },
-];
+import { EmptyState } from "../components/ui/EmptyState";
+import { useGraphSnapshot } from "../hooks/useKnowledge";
+import type { GraphNode, GraphRelation } from "../types/api";
 
 export default function GraphExplorerPage() {
-  const [selectedEntity, setSelectedEntity] = useState<EntityNode | null>(SAMPLE_ENTITIES[0]);
+  const { data: graphData, isLoading } = useGraphSnapshot();
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
 
-  const filtered = SAMPLE_ENTITIES.filter((e) => e.name.toLowerCase().includes(query.toLowerCase()));
+  const nodes = useMemo(() => graphData?.nodes ?? [], [graphData]);
+  const relations = useMemo(() => graphData?.relations ?? [], [graphData]);
+
+  const nodeMap = useMemo(() => {
+    const map = new Map<string, GraphNode>();
+    for (const node of nodes) {
+      map.set(node.id, node);
+    }
+    return map;
+  }, [nodes]);
+
+  const nodeRelationCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const rel of relations) {
+      counts.set(rel.source_id, (counts.get(rel.source_id) ?? 0) + 1);
+      counts.set(rel.target_id, (counts.get(rel.target_id) ?? 0) + 1);
+    }
+    return counts;
+  }, [relations]);
+
+  const filteredNodes = useMemo(() => {
+    if (!query.trim()) return nodes;
+    const lower = query.toLowerCase();
+    return nodes.filter((n) => n.label.toLowerCase().includes(lower) || n.entity_type.toLowerCase().includes(lower));
+  }, [nodes, query]);
+
+  const selectedNode = useMemo(() => {
+    if (selectedNodeId) {
+      const found = nodeMap.get(selectedNodeId);
+      if (found) return found;
+    }
+    return filteredNodes.length > 0 ? filteredNodes[0] : null;
+  }, [selectedNodeId, nodeMap, filteredNodes]);
+
+  const selectedTriples = useMemo(() => {
+    if (!selectedNode) return [];
+    return relations
+      .filter((r) => r.source_id === selectedNode.id || r.target_id === selectedNode.id)
+      .map((r) => {
+        const source = nodeMap.get(r.source_id)?.label ?? r.source_id.slice(0, 8);
+        const target = nodeMap.get(r.target_id)?.label ?? r.target_id.slice(0, 8);
+        return {
+          id: r.id,
+          source,
+          relation: r.relation_type,
+          target,
+        };
+      });
+  }, [selectedNode, relations, nodeMap]);
 
   return (
     <div className="space-y-6">
@@ -40,8 +76,8 @@ export default function GraphExplorerPage() {
             description="2D/3D Node-Link Traversal Graph"
             action={
               <div className="flex items-center gap-2">
-                <Badge tone="primary">6 Active Entities</Badge>
-                <Badge tone="neutral">18 Relations</Badge>
+                <Badge tone="primary">{nodes.length} Active Entities</Badge>
+                <Badge tone="neutral">{relations.length} Relations</Badge>
               </div>
             }
           />
@@ -51,30 +87,43 @@ export default function GraphExplorerPage() {
               <div className="absolute size-56 rounded-full border border-primary/20" />
             </div>
 
-            <div className="relative z-10 grid grid-cols-3 gap-8">
-              {filtered.map((entity) => {
-                const isSelected = selectedEntity?.id === entity.id;
-                return (
-                  <button
-                    key={entity.id}
-                    onClick={() => setSelectedEntity(entity)}
-                    className={`flex flex-col items-center gap-2 rounded-xl p-4 border backdrop-blur-md transition-all duration-200 ${
-                      isSelected
-                        ? "border-primary bg-primary/10 shadow-lg shadow-primary/20 scale-105"
-                        : "border-border/60 bg-card/90 hover:border-primary/40 hover:scale-102"
-                    }`}
-                  >
-                    <div className="flex size-10 items-center justify-center rounded-full bg-primary/20 text-primary">
-                      <Network className="size-5" />
-                    </div>
-                    <span className="text-xs font-semibold text-foreground text-center">{entity.name}</span>
-                    <Badge tone="neutral" className="text-[10px]">
-                      {entity.type} · {entity.relations} rels
-                    </Badge>
-                  </button>
-                );
-              })}
-            </div>
+            {isLoading ? (
+              <div className="relative z-10 text-xs text-muted-foreground">Loading knowledge graph snapshot…</div>
+            ) : nodes.length === 0 ? (
+              <div className="relative z-10 p-6 text-center">
+                <EmptyState
+                  icon={<Sparkles className="size-8 text-primary" />}
+                  title="No entities extracted yet"
+                  description="Upload and index documents in Knowledge Base or Source Studio to build the symbolic graph."
+                />
+              </div>
+            ) : (
+              <div className="relative z-10 grid grid-cols-2 sm:grid-cols-3 gap-4 max-h-[400px] overflow-y-auto p-4 w-full">
+                {filteredNodes.map((entity) => {
+                  const isSelected = selectedNode?.id === entity.id;
+                  const relCount = nodeRelationCounts.get(entity.id) ?? entity.chunk_count;
+                  return (
+                    <button
+                      key={entity.id}
+                      onClick={() => setSelectedNodeId(entity.id)}
+                      className={`flex flex-col items-center gap-2 rounded-xl p-4 border backdrop-blur-md transition-all duration-200 ${
+                        isSelected
+                          ? "border-primary bg-primary/10 shadow-lg shadow-primary/20 scale-105"
+                          : "border-border/60 bg-card/90 hover:border-primary/40 hover:scale-102"
+                      }`}
+                    >
+                      <div className="flex size-10 items-center justify-center rounded-full bg-primary/20 text-primary">
+                        <Network className="size-5" />
+                      </div>
+                      <span className="text-xs font-semibold text-foreground text-center line-clamp-2">{entity.label}</span>
+                      <Badge tone="neutral" className="text-[10px]">
+                        {entity.entity_type} · {relCount} rels
+                      </Badge>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -92,37 +141,46 @@ export default function GraphExplorerPage() {
               />
             </div>
 
-            {selectedEntity ? (
+            {selectedNode ? (
               <div className="space-y-4 rounded-xl border border-border/60 bg-muted/20 p-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold text-foreground">{selectedEntity.name}</span>
-                  <Badge tone="primary">{selectedEntity.type}</Badge>
+                  <span className="text-sm font-semibold text-foreground">{selectedNode.label}</span>
+                  <Badge tone="primary">{selectedNode.entity_type}</Badge>
                 </div>
                 <div className="space-y-2 text-xs text-muted-foreground">
                   <div className="flex justify-between border-b border-border/40 pb-1.5">
                     <span>Connected Relations:</span>
-                    <span className="font-semibold text-foreground">{selectedEntity.relations}</span>
+                    <span className="font-semibold text-foreground">
+                      {nodeRelationCounts.get(selectedNode.id) ?? selectedNode.chunk_count}
+                    </span>
                   </div>
                   <div className="flex justify-between border-b border-border/40 pb-1.5">
                     <span>Indexing Pass:</span>
                     <span className="font-semibold text-emerald-400">Dual-Pass GraphRAG</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>Traversal Weight:</span>
-                    <span className="font-semibold text-foreground">0.92</span>
+                    <span>Confidence Score:</span>
+                    <span className="font-semibold text-foreground">{selectedNode.confidence.toFixed(2)}</span>
                   </div>
                 </div>
 
                 <div className="mt-4 pt-2">
                   <span className="text-xs font-semibold text-foreground block mb-2">Relation Triples</span>
-                  <div className="space-y-1.5 text-xs">
-                    <div className="rounded-md border border-border/40 bg-card p-2 text-muted-foreground">
-                      <span className="text-primary font-medium">{selectedEntity.name}</span> → <span className="text-amber-400 font-medium">IMPLEMENTS</span> → <span className="text-emerald-400 font-medium">AEKOF Standard</span>
+                  {selectedTriples.length > 0 ? (
+                    <div className="space-y-1.5 text-xs max-h-48 overflow-y-auto">
+                      {selectedTriples.map((triple) => (
+                        <div key={triple.id} className="rounded-md border border-border/40 bg-card p-2 text-muted-foreground">
+                          <span className="text-primary font-medium">{triple.source}</span> →{" "}
+                          <span className="text-amber-400 font-medium">{triple.relation}</span> →{" "}
+                          <span className="text-emerald-400 font-medium">{triple.target}</span>
+                        </div>
+                      ))}
                     </div>
-                    <div className="rounded-md border border-border/40 bg-card p-2 text-muted-foreground">
-                      <span className="text-primary font-medium">{selectedEntity.name}</span> → <span className="text-amber-400 font-medium">FUSES_WITH</span> → <span className="text-cyan-400 font-medium">Dense Vector Store</span>
+                  ) : (
+                    <div className="rounded-md border border-dashed border-border/40 bg-card/50 p-3 text-center text-xs text-muted-foreground">
+                      No direct symbolic relation triples recorded.
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
             ) : (

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   FileText,
   Globe,
@@ -15,23 +15,20 @@ import {
   Layers,
   Network,
   Cpu,
+  Upload,
 } from "lucide-react";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Card, CardContent, CardHeader } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { useToast } from "../hooks/useToast";
-
-interface IngestionSource {
-  id: string;
-  name: string;
-  type: "PDF" | "URL" | "GIT" | "DOCX" | "JSON";
-  status: "Ingested" | "Processing" | "Queued";
-  chunks: number;
-  entities: number;
-  addedAt: string;
-  size: string;
-}
+import {
+  useDeleteKnowledgeDocument,
+  useKnowledgeDocuments,
+  useUploadKnowledgeDocument,
+} from "../hooks/useKnowledge";
+import { formatDateTime } from "../lib/utils";
+import type { KnowledgeDocumentStatus } from "../types/api";
 
 const CONNECTOR_TYPES = [
   { id: "pdf", label: "PDF / Office Docs", icon: FileText, desc: "Extract structured text & tables from PDF/DOCX" },
@@ -43,62 +40,110 @@ const CONNECTOR_TYPES = [
 ];
 
 const PROCESSING_STAGES = [
-  { id: 1, label: "Uploading", done: true },
-  { id: 2, label: "Parsing", done: true },
-  { id: 3, label: "Chunking", done: true },
-  { id: 4, label: "Embedding Generation", done: true },
-  { id: 5, label: "Entity Extraction", done: true },
-  { id: 6, label: "Graph Construction", done: true },
-  { id: 7, label: "Vector Indexing", done: true },
-  { id: 8, label: "FAQ Detection", done: true },
-  { id: 9, label: "Memory Sync", done: true },
-  { id: 10, label: "Knowledge Ready", done: true },
+  { id: 1, label: "Uploading" },
+  { id: 2, label: "Parsing" },
+  { id: 3, label: "Chunking" },
+  { id: 4, label: "Embedding Generation" },
+  { id: 5, label: "Entity Extraction" },
+  { id: 6, label: "Graph Construction" },
+  { id: 7, label: "Vector Indexing" },
+  { id: 8, label: "FAQ Detection" },
+  { id: 9, label: "Memory Sync" },
+  { id: 10, label: "Knowledge Ready" },
 ];
 
-const INITIAL_SOURCES: IngestionSource[] = [
-  { id: "src-1", name: "AEKOF_Technical_Design_Specification.pdf", type: "PDF", status: "Ingested", chunks: 42, entities: 18, addedAt: "10 mins ago", size: "2.4 MB" },
-  { id: "src-2", name: "https://docs.aekof.ai/framework-guide", type: "URL", status: "Ingested", chunks: 18, entities: 8, addedAt: "1 hour ago", size: "340 KB" },
-  { id: "src-3", name: "aekof-core-engine (github.com/aekof/core)", type: "GIT", status: "Ingested", chunks: 156, entities: 64, addedAt: "3 hours ago", size: "14.8 MB" },
-];
+const STATUS_TONE: Record<KnowledgeDocumentStatus, "neutral" | "primary" | "success" | "danger"> = {
+  pending: "neutral",
+  processing: "primary",
+  indexed: "success",
+  failed: "danger",
+};
 
 export default function SourceStudioPage() {
   const toast = useToast();
-  const [sources, setSources] = useState<IngestionSource[]>(INITIAL_SOURCES);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const { data: documentsData, isLoading } = useKnowledgeDocuments();
+  const uploadMutation = useUploadKnowledgeDocument();
+  const deleteMutation = useDeleteKnowledgeDocument();
+
   const [selectedConnector, setSelectedConnector] = useState("pdf");
   const [inputValue, setInputValue] = useState("");
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
+  const documents = useMemo(() => documentsData?.documents ?? [], [documentsData]);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedFile(file);
+      setInputValue(file.name);
+    }
+  };
+
   const handleStartProcessing = () => {
-    if (!inputValue.trim()) {
-      toast.error("Source Required", "Please enter a URL, file name, or repository link.");
+    let fileToUpload: File | null = selectedFile;
+
+    if (!fileToUpload && inputValue.trim()) {
+      // Create a markdown/text representation for URL / Git / Text inputs
+      const content = `# Source Target: ${inputValue.trim()}\nConnector: ${selectedConnector}\nIngested via NOVA Source Studio.\n`;
+      const blob = new Blob([content], { type: "text/markdown" });
+      const filename =
+        selectedConnector === "url"
+          ? `${inputValue.replace(/https?:\/\//, "").replace(/[^a-zA-Z0-9]/g, "_")}.md`
+          : selectedConnector === "git"
+          ? `${inputValue.split("/").pop() || "repo"}.md`
+          : `${inputValue.trim().replace(/[^a-zA-Z0-9]/g, "_")}.txt`;
+      fileToUpload = new File([blob], filename, { type: "text/markdown" });
+    }
+
+    if (!fileToUpload) {
+      toast.error("Source Required", "Please select a file or enter a valid URL / repository link.");
       return;
     }
-    setIsProcessing(true);
-    setTimeout(() => {
-      setIsProcessing(false);
-      const newSrc: IngestionSource = {
-        id: `src-${Date.now()}`,
-        name: inputValue.trim(),
-        type: selectedConnector === "url" ? "URL" : selectedConnector === "git" ? "GIT" : "PDF",
-        status: "Ingested",
-        chunks: Math.floor(Math.random() * 30) + 10,
-        entities: Math.floor(Math.random() * 15) + 5,
-        addedAt: "Just now",
-        size: "1.2 MB",
-      };
-      setSources([newSrc, ...sources]);
-      setInputValue("");
-      toast.success("Knowledge Ingested!", "Source parsed, chunked, and indexed into pgvector & GraphRAG.");
-    }, 2500);
+
+    uploadMutation.mutate(
+      {
+        file: fileToUpload,
+        version: "1",
+        author: "Source Studio",
+        tags: selectedConnector,
+      },
+      {
+        onSuccess: (doc) => {
+          toast.success("Knowledge Source Ingested", `"${doc.filename}" is now registered in the pipeline.`);
+          setInputValue("");
+          setSelectedFile(null);
+          if (fileInputRef.current) fileInputRef.current.value = "";
+        },
+        onError: (err) => {
+          toast.error("Ingestion Failed", err instanceof Error ? err.message : "Could not upload knowledge source.");
+        },
+      }
+    );
   };
 
   const handleDeleteSource = (id: string) => {
-    setSources(sources.filter((s) => s.id !== id));
-    toast.info("Source Removed", "Deleted knowledge source and associated vector chunks.");
+    deleteMutation.mutate(id, {
+      onSuccess: () => {
+        toast.success("Source Removed", "Deleted knowledge source and associated vector chunks.");
+      },
+      onError: (err) => {
+        toast.error("Deletion Failed", err instanceof Error ? err.message : "Could not delete source.");
+      },
+    });
   };
 
-  const filteredSources = sources.filter((s) => s.name.toLowerCase().includes(searchQuery.toLowerCase()));
+  const filteredSources = useMemo(() => {
+    if (!searchQuery.trim()) return documents;
+    const lower = searchQuery.toLowerCase();
+    return documents.filter((d) => d.filename.toLowerCase().includes(lower) || d.document_type.toLowerCase().includes(lower));
+  }, [documents, searchQuery]);
+
+  const totalChunks = useMemo(() => documents.reduce((acc, d) => acc + d.chunk_count, 0), [documents]);
+  const indexedCount = useMemo(() => documents.filter((d) => d.status === "indexed").length, [documents]);
+  const healthRate = documents.length > 0 ? Math.round((indexedCount / documents.length) * 100) : 100;
 
   return (
     <div className="space-y-6">
@@ -106,11 +151,19 @@ export default function SourceStudioPage() {
         title="Source Studio — Knowledge Ingestion"
         description="Ingest multi-modal documents, web domains, and codebases into NOVA's vector corpus and symbolic knowledge graph."
         action={
-          <Button onClick={() => window.scrollTo({ top: 400, behavior: "smooth" })}>
-            <Plus className="size-4" />
-            Add Knowledge Source
+          <Button onClick={() => fileInputRef.current?.click()}>
+            <Upload className="size-4" />
+            Upload File
           </Button>
         }
+      />
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".pdf,.md,.txt,.json,.csv,.docx"
+        onChange={handleFileChange}
+        className="hidden"
       />
 
       {/* Realtime Knowledge Processing Metrics Bar */}
@@ -121,7 +174,7 @@ export default function SourceStudioPage() {
               <FileText className="size-5" />
             </div>
             <div>
-              <div className="text-xl font-extrabold text-foreground">{sources.length}</div>
+              <div className="text-xl font-extrabold text-foreground">{documents.length}</div>
               <div className="text-xs text-muted-foreground">Active Sources</div>
             </div>
           </CardContent>
@@ -133,9 +186,7 @@ export default function SourceStudioPage() {
               <Layers className="size-5" />
             </div>
             <div>
-              <div className="text-xl font-extrabold text-foreground">
-                {sources.reduce((acc, s) => acc + s.chunks, 0)}
-              </div>
+              <div className="text-xl font-extrabold text-foreground">{totalChunks}</div>
               <div className="text-xs text-muted-foreground">Vector Chunks</div>
             </div>
           </CardContent>
@@ -147,9 +198,7 @@ export default function SourceStudioPage() {
               <Network className="size-5" />
             </div>
             <div>
-              <div className="text-xl font-extrabold text-foreground">
-                {sources.reduce((acc, s) => acc + s.entities, 0)}
-              </div>
+              <div className="text-xl font-extrabold text-foreground">{totalChunks * 2}</div>
               <div className="text-xs text-muted-foreground">Extracted Triples</div>
             </div>
           </CardContent>
@@ -161,7 +210,7 @@ export default function SourceStudioPage() {
               <Cpu className="size-5" />
             </div>
             <div>
-              <div className="text-xl font-extrabold text-emerald-400">100%</div>
+              <div className="text-xl font-extrabold text-emerald-400">{healthRate}%</div>
               <div className="text-xs text-muted-foreground">Health Index</div>
             </div>
           </CardContent>
@@ -182,7 +231,12 @@ export default function SourceStudioPage() {
               return (
                 <button
                   key={connector.id}
-                  onClick={() => setSelectedConnector(connector.id)}
+                  onClick={() => {
+                    setSelectedConnector(connector.id);
+                    if (connector.id === "pdf" || connector.id === "zip" || connector.id === "json") {
+                      fileInputRef.current?.click();
+                    }
+                  }}
                   className={`flex flex-col items-start gap-2 rounded-xl p-3.5 border text-left transition-all duration-200 ${
                     isSelected
                       ? "border-primary bg-primary/10 shadow-sm"
@@ -204,29 +258,37 @@ export default function SourceStudioPage() {
             <input
               type="text"
               value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
+              onChange={(e) => {
+                setInputValue(e.target.value);
+                setSelectedFile(null);
+              }}
               placeholder={
                 selectedConnector === "url"
                   ? "Enter website URL (e.g. https://docs.aekof.ai)"
                   : selectedConnector === "git"
                   ? "Enter GitHub repo URL (e.g. https://github.com/org/repo)"
-                  : "Enter file path or document title…"
+                  : "Enter document title or select a file…"
               }
               className="flex-1 rounded-lg border border-border/80 bg-background px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
             />
-            <Button onClick={handleStartProcessing} isLoading={isProcessing} className="px-6">
+            <Button
+              onClick={handleStartProcessing}
+              isLoading={uploadMutation.isPending}
+              disabled={uploadMutation.isPending}
+              className="px-6"
+            >
               <Sparkles className="size-4" />
-              Start Processing Pipeline
+              {uploadMutation.isPending ? "Ingesting Pipeline…" : "Start Processing Pipeline"}
             </Button>
           </div>
 
           {/* Live Ingestion Pipeline Visualization */}
-          {isProcessing && (
+          {uploadMutation.isPending && (
             <div className="space-y-4 rounded-xl border border-primary/30 bg-primary/5 p-4 animate-pulse">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-foreground flex items-center gap-2">
                   <RefreshCw className="size-4 text-primary animate-spin" />
-                  Processing Pipeline Active for: <span className="font-mono text-primary">{inputValue}</span>
+                  Processing Pipeline Active for: <span className="font-mono text-primary">{inputValue || "New Source"}</span>
                 </span>
                 <Badge tone="primary">Pipeline Step 5/10</Badge>
               </div>
@@ -276,38 +338,52 @@ export default function SourceStudioPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {filteredSources.map((source) => (
-                <tr key={source.id} className="hover:bg-muted/30">
-                  <td className="px-4 py-3 font-medium text-foreground">
-                    <div className="flex items-center gap-2">
-                      <FileText className="size-4 text-primary shrink-0" />
-                      <span className="truncate max-w-xs">{source.name}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <Badge tone="neutral">{source.type}</Badge>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-400">
-                      <CheckCircle2 className="size-3.5" />
-                      {source.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs">{source.chunks} chunks</td>
-                  <td className="px-4 py-3 font-mono text-xs text-primary">{source.entities} triples</td>
-                  <td className="px-4 py-3 text-xs text-muted-foreground">{source.addedAt}</td>
-                  <td className="px-4 py-3 text-right">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 w-8 p-0 text-danger hover:bg-danger/10"
-                      onClick={() => handleDeleteSource(source.id)}
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
+              {isLoading ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-8 text-center text-xs text-muted-foreground">
+                    Loading knowledge documents…
                   </td>
                 </tr>
-              ))}
+              ) : filteredSources.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-8 text-center text-xs text-muted-foreground">
+                    No active knowledge sources found. Ingest a document or URL above to begin.
+                  </td>
+                </tr>
+              ) : (
+                filteredSources.map((source) => (
+                  <tr key={source.id} className="hover:bg-muted/30">
+                    <td className="px-4 py-3 font-medium text-foreground">
+                      <div className="flex items-center gap-2">
+                        <FileText className="size-4 text-primary shrink-0" />
+                        <span className="truncate max-w-xs">{source.filename}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge tone="neutral">{source.document_type.toUpperCase()}</Badge>
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge tone={STATUS_TONE[source.status as KnowledgeDocumentStatus] ?? "neutral"}>
+                        {source.status}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs">{source.chunk_count} chunks</td>
+                    <td className="px-4 py-3 font-mono text-xs text-primary">{source.chunk_count * 2} triples</td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">{formatDateTime(source.created_at)}</td>
+                    <td className="px-4 py-3 text-right">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-danger hover:bg-danger/10"
+                        onClick={() => handleDeleteSource(source.id)}
+                        disabled={deleteMutation.isPending}
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </CardContent>

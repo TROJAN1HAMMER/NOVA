@@ -4,6 +4,7 @@ import {
   BookOpen,
   Brain,
   Dna,
+  FolderPlus,
   Gauge,
   Moon,
   Network,
@@ -26,6 +27,7 @@ function buildNavigationItems(role: UserRole | undefined | null): CommandItem[] 
     keywords: string[];
   }[] = [
     { routeKey: "assistant", to: "/assistant", title: "Assistant", subtitle: "Intelligence chat workspace", icon: Sparkles, keywords: ["assistant", "chat", "ai"] },
+    { routeKey: "source-studio", to: "/source-studio", title: "Source Studio", subtitle: "Knowledge ingestion & connector studio", icon: FolderPlus, keywords: ["source studio", "sources", "upload", "ingest", "connectors", "import"] },
     { routeKey: "knowledge", to: "/knowledge", title: "Knowledge Base", subtitle: "Corpus documents & instant FAQ rules", icon: BookOpen, keywords: ["knowledge base", "docs", "upload", "rag"] },
     { routeKey: "graph-explorer", to: "/graph-explorer", title: "Graph Explorer", subtitle: "GraphRAG entity-relation visualization", icon: Network, keywords: ["graph", "entities", "triples"] },
     { routeKey: "memory", to: "/memory", title: "Memory", subtitle: "5-layer enterprise memory engine", icon: Brain, keywords: ["memory", "context", "history"] },
@@ -80,6 +82,23 @@ function buildQuickActions(ctx: QuickActionContext): CommandItem[] {
       keywords: ["assistant", "chat", "ai", "ask"],
       perform: ({ navigate, close }) => {
         navigate("/assistant");
+        close();
+      },
+    });
+  }
+
+  if (canAccessRoute(ctx.role, "source-studio")) {
+    items.push({
+      id: "action:source-studio",
+      section: "quickActions",
+      title: "Source Studio (Upload & Ingest)",
+      subtitle: "Ingest files, web URLs, git repos, or datasets into knowledge corpus",
+      icon: FolderPlus,
+      badge: "Action",
+      badgeTone: "primary",
+      keywords: ["source studio", "source", "studio", "upload", "ingest", "import"],
+      perform: ({ navigate, close }) => {
+        navigate("/source-studio");
         close();
       },
     });
