@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Bot, Send, Sparkles, ThumbsDown, ThumbsUp, User as UserIcon, XCircle } from "lucide-react";
+import { useEffect, useRef, useState, useCallback, type FormEvent } from "react";
+import { Bot, Send, Sparkles, ThumbsDown, ThumbsUp, User as UserIcon, XCircle, ChevronDown } from "lucide-react";
 import { PageHeader } from "../components/ui/PageHeader";
-import { Card, CardContent } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { EmptyState } from "../components/ui/EmptyState";
@@ -67,35 +66,42 @@ function FeedbackButtons({ messageId }: { messageId: string }) {
 function MessageBubble({ message }: { message: AssistantChatMessage }) {
   const isUser = message.role === "user";
   return (
-    <div className={cn("flex gap-3", isUser && "flex-row-reverse")}>
+    <div className={cn("flex gap-3 w-full", isUser && "flex-row-reverse")}>
+      {/* Avatar */}
       <div
         className={cn(
-          "flex size-8 shrink-0 items-center justify-center rounded-full",
+          "flex size-8 shrink-0 items-center justify-center rounded-full mt-1",
           isUser ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground",
         )}
       >
         {isUser ? <UserIcon className="size-4" /> : <Bot className="size-4" />}
       </div>
-      <div className={cn("max-w-[75%] space-y-2", isUser && "flex flex-col items-end")}>
+
+      {/* Bubble */}
+      <div className={cn("flex flex-col gap-2 min-w-0", isUser ? "items-end max-w-[70%]" : "items-start w-full max-w-[85%]")}>
         <div
           className={cn(
-            "rounded-xl px-4 py-2.5 text-sm",
-            isUser ? "bg-primary text-primary-foreground" : "border border-border bg-card text-foreground",
+            "rounded-2xl px-4 py-3 text-sm leading-relaxed break-words w-full",
+            isUser
+              ? "bg-primary text-primary-foreground"
+              : "border border-border bg-card text-foreground",
             message.error && "border-danger/40 bg-danger/10 text-danger",
           )}
         >
-          <p className="whitespace-pre-wrap">{message.error ? message.error : message.content}</p>
-          {message.isStreaming && !message.content && (
+          {message.isStreaming && !message.content ? (
             <span className="inline-flex gap-1 py-1">
-              <span className="size-1.5 animate-pulse rounded-full bg-muted-foreground" />
-              <span className="size-1.5 animate-pulse rounded-full bg-muted-foreground [animation-delay:0.15s]" />
-              <span className="size-1.5 animate-pulse rounded-full bg-muted-foreground [animation-delay:0.3s]" />
+              <span className="size-2 animate-bounce rounded-full bg-muted-foreground" />
+              <span className="size-2 animate-bounce rounded-full bg-muted-foreground [animation-delay:0.15s]" />
+              <span className="size-2 animate-bounce rounded-full bg-muted-foreground [animation-delay:0.3s]" />
             </span>
+          ) : (
+            <p className="whitespace-pre-wrap">{message.error ?? message.content}</p>
           )}
         </div>
 
+        {/* Metadata */}
         {!isUser && !message.isStreaming && !message.error && message.confidence != null && (
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground px-1">
             <ConfidenceBadge confidence={message.confidence} />
             <span>{message.retrievedCount ?? 0} chunk(s) retrieved</span>
             {message.latencyMs != null && <span>{message.latencyMs}ms</span>}
@@ -103,8 +109,9 @@ function MessageBubble({ message }: { message: AssistantChatMessage }) {
           </div>
         )}
 
+        {/* Citations */}
         {!isUser && message.citations && message.citations.length > 0 && (
-          <div className="w-full">
+          <div className="w-full px-1">
             <CitationList citations={message.citations} />
           </div>
         )}
@@ -118,20 +125,43 @@ export default function AssistantPage() {
   const [input, setInput] = useState("");
   const [sessions, setSessions] = useState<ChatSessionItem[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const scrollAnchorRef = useRef<HTMLDivElement>(null);
+  const [showScrollBtn, setShowScrollBtn] = useState(false);
+
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const isNearBottomRef = useRef(true);
 
   const loadSessions = async () => {
     try {
       const data = await fetchChatSessions();
       setSessions(data);
     } catch {
-      // quiet fail on auth or network delay
+      // quiet fail
     }
   };
 
-  useEffect(() => {
-    loadSessions();
+  useEffect(() => { loadSessions(); }, []);
+
+  // Track if user is near bottom
+  const handleScroll = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    isNearBottomRef.current = distFromBottom < 80;
+    setShowScrollBtn(distFromBottom > 200);
   }, []);
+
+  // Auto-scroll only when user is already near bottom
+  useEffect(() => {
+    if (isNearBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
+  }, [messages]);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    setShowScrollBtn(false);
+  };
 
   const handleSelectSession = async (id: string) => {
     setActiveSessionId(id);
@@ -166,30 +196,23 @@ export default function AssistantPage() {
   const handleDeleteSession = async (id: string) => {
     try {
       await deleteChatSession(id);
-      if (activeSessionId === id) {
-        setActiveSessionId(null);
-        clear();
-      }
+      if (activeSessionId === id) { setActiveSessionId(null); clear(); }
       await loadSessions();
-    } catch {
-      // quiet fail
-    }
+    } catch { /* quiet fail */ }
   };
-
-  useEffect(() => {
-    scrollAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages]);
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
     if (!input.trim() || isSending) return;
+    // Force scroll to bottom on new message send
+    isNearBottomRef.current = true;
     sendMessage(input, activeSessionId || undefined);
     setInput("");
     setTimeout(loadSessions, 2000);
   };
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] flex-col">
+    <div className="flex h-[calc(100vh-6rem)] flex-col gap-3">
       <PageHeader
         title="AI Assistant"
         description="Ask questions in plain language — answers are grounded in your indexed knowledge base documents."
@@ -202,7 +225,9 @@ export default function AssistantPage() {
         }
       />
 
-      <div className="flex flex-1 overflow-hidden rounded-xl border border-border">
+      {/* Main chat area */}
+      <div className="flex flex-1 overflow-hidden rounded-xl border border-border min-h-0">
+        {/* Session Sidebar */}
         <SessionSidebar
           sessions={sessions}
           activeSessionId={activeSessionId}
@@ -211,41 +236,78 @@ export default function AssistantPage() {
           onDeleteSession={handleDeleteSession}
         />
 
-        <Card className="flex flex-1 flex-col overflow-hidden border-0 rounded-none">
-          <CardContent className="flex-1 space-y-4 overflow-y-auto p-4">
+        {/* Chat Panel */}
+        <div className="flex flex-1 flex-col min-h-0 overflow-hidden bg-card">
+          {/* ── Scrollable messages area ── */}
+          <div
+            ref={scrollContainerRef}
+            onScroll={handleScroll}
+            className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-4 space-y-5 scroll-smooth"
+            style={{ scrollbarWidth: "thin" }}
+          >
             {messages.length === 0 ? (
-              <EmptyState
-                icon={<Sparkles className="size-10" />}
-                title="Ask the assistant anything"
-                description='Try: "How often must passwords be rotated?" — answers are grounded in your uploaded documents.'
-              />
+              <div className="flex h-full items-center justify-center">
+                <EmptyState
+                  icon={<Sparkles className="size-10" />}
+                  title="Ask the assistant anything"
+                  description='Try: "How often must passwords be rotated?" — answers are grounded in your uploaded documents.'
+                />
+              </div>
             ) : (
-              messages.map((message) => <MessageBubble key={message.id} message={message} />)
+              messages.map((message) => (
+                <MessageBubble key={message.id} message={message} />
+              ))
             )}
-            <div ref={scrollAnchorRef} />
-          </CardContent>
+            {/* Scroll anchor */}
+            <div ref={messagesEndRef} className="h-1" />
+          </div>
 
-          <form onSubmit={handleSubmit} className="flex items-center gap-2 border-t border-border p-4">
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask a question about your knowledge base…"
-              className="flex-1 rounded-lg border border-border bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-              disabled={isSending}
-            />
-            {isSending ? (
-              <Button type="button" variant="outline" onClick={stop}>
-                <XCircle className="size-4" />
-                Stop
-              </Button>
-            ) : (
-              <Button type="submit" disabled={!input.trim()}>
-                <Send className="size-4" />
-                Send
-              </Button>
-            )}
-          </form>
-        </Card>
+          {/* Scroll-to-bottom FAB */}
+          {showScrollBtn && (
+            <div className="relative">
+              <button
+                onClick={scrollToBottom}
+                className="absolute bottom-2 right-4 z-10 flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground shadow-md transition hover:bg-muted"
+              >
+                <ChevronDown className="size-3.5" />
+                Scroll to latest
+              </button>
+            </div>
+          )}
+
+          {/* ── Input bar ── */}
+          <div className="border-t border-border bg-card/80 backdrop-blur-sm px-4 py-3">
+            <form onSubmit={handleSubmit} className="flex items-center gap-2">
+              <input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSubmit(e as unknown as FormEvent);
+                  }
+                }}
+                placeholder="Ask a question about your knowledge base…"
+                className="flex-1 rounded-xl border border-border bg-background px-4 py-2.5 text-sm placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-50"
+                disabled={isSending}
+              />
+              {isSending ? (
+                <Button type="button" variant="outline" onClick={stop} className="shrink-0">
+                  <XCircle className="size-4" />
+                  Stop
+                </Button>
+              ) : (
+                <Button type="submit" disabled={!input.trim()} className="shrink-0">
+                  <Send className="size-4" />
+                  Send
+                </Button>
+              )}
+            </form>
+            <p className="mt-1.5 text-center text-xs text-muted-foreground">
+              Press <kbd className="rounded border border-border px-1 py-0.5 font-mono text-[10px]">Enter</kbd> to send · answers grounded in your documents
+            </p>
+          </div>
+        </div>
       </div>
     </div>
   );

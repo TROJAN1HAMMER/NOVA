@@ -11,10 +11,10 @@ FROM node:20-alpine AS build
 
 WORKDIR /app
 
-# Separate layer from the source copy below so `npm ci` is only re-run
-# when package-lock.json actually changes, not on every source edit.
+# Separate layer from the source copy below so install is only re-run
+# when package.json actually changes, not on every source edit.
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm install --legacy-peer-deps
 
 COPY . .
 

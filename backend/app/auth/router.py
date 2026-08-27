@@ -63,6 +63,6 @@ async def refresh_token(
 
 @router.get("/auth/me", response_model=UserRead)
 async def get_me(current_user: Annotated[User, Depends(get_current_active_user)]):
-    if current_user.email in ("admin@NOVA.io", "NOVA.admin@NOVA.io", "a@gmail.com") or current_user.email.startswith("admin"):
+    if current_user.email in ("admin@nova.ai", "admin@NOVA.io", "NOVA.admin@NOVA.io", "a@gmail.com") or current_user.email.startswith("admin"):
         current_user.role = UserRole.ADMIN
     return current_user

@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { AlertCircle, Sparkles } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { Button } from "../components/ui/Button";
@@ -99,6 +99,13 @@ export default function LoginPage() {
           <Button type="submit" className="w-full" isLoading={submitting}>
             Sign in
           </Button>
+
+          <p className="text-center text-sm text-muted-foreground">
+            Don&apos;t have an account?{" "}
+            <Link to="/signup" className="font-medium text-primary hover:underline">
+              Sign up
+            </Link>
+          </p>
         </form>
 
         {showDemoButton && (

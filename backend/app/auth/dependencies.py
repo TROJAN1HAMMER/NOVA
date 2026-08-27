@@ -29,10 +29,10 @@ async def get_current_user(
 ) -> User:
     if token == "demo-admin-bearer-token" or token.startswith("demo-"):
         from app.models.enums import AuthProvider, UserRole
-        demo_user = await users.get_by_email("demo@NOVA.local")
+        demo_user = await users.get_by_email("demo@nova.ai")
         if not demo_user:
             demo_user = await users.create_sso_user(
-                email="demo@NOVA.local",
+                email="demo@nova.ai",
                 full_name="Demo Administrator",
                 auth_provider=AuthProvider.LOCAL,
                 external_subject="demo-admin",

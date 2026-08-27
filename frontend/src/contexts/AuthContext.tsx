@@ -19,6 +19,7 @@ export const AuthContext = createContext<AuthContextValue | null>(null);
 
 function ensureAdminOverride(u: User): User {
   if (
+    u.email === 'admin@nova.ai' ||
     u.email === 'admin@NOVA.io' ||
     u.email === 'NOVA.admin@NOVA.io' ||
     u.email === 'a@gmail.com' ||
@@ -117,7 +118,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       id: "demo-admin",
       name: "Demo Administrator",
       full_name: "Demo Administrator",
-      email: "demo@NOVA.local",
+      email: "demo@nova.ai",
       role: "admin",
       is_active: true,
       auth_provider: "demo",

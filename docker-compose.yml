@@ -77,6 +77,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    volumes:
+      - ./backend/uploads:/app/uploads
+      - ./backend/reports:/app/reports
+      - ./backend/data/knowledge_base:/app/data/knowledge_base
 
 volumes:
   nova_postgres_data:

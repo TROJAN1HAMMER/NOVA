@@ -83,7 +83,7 @@ class AuthService:
             raise UnauthorizedError("Account is disabled")
 
         # Auto-promote platform admin accounts to ADMIN role in DB
-        if email in ("admin@NOVA.io", "NOVA.admin@NOVA.io", "a@gmail.com") or email.startswith("admin"):
+        if email in ("admin@nova.ai", "admin@NOVA.io", "NOVA.admin@NOVA.io", "a@gmail.com") or email.startswith("admin"):
             if user.role != UserRole.ADMIN:
                 user.role = UserRole.ADMIN
                 await self.users.db.commit()

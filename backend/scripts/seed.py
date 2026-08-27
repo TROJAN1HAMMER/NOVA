@@ -22,7 +22,7 @@ AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 async def seed():
     async with AsyncSessionLocal() as session:
         # Seed Admin User
-        admin_email = "admin@NOVA.io"
+        admin_email = "admin@nova.ai"
         result = await session.execute(select(User).where(User.email == admin_email))
         admin = result.scalars().first()
 

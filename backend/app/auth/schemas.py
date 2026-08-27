@@ -26,7 +26,7 @@ class AdminUserCreateRequest(BaseModel):
 
 class UserRead(BaseModel):
     id: uuid.UUID
-    email: EmailStr
+    email: str  # str (not EmailStr) so internal/demo emails with .local TLD don't crash response serialisation
     full_name: Optional[str] = None
     role: UserRole
     is_active: bool
