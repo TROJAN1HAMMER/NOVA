@@ -214,6 +214,19 @@ async def retrieve_and_orchestrate(
             citations = []
             context_block = ""
             sufficient = False
+            trust_eval = {
+                "trust_score": 0.0,
+                "confidence_vector": c_vector,
+                "decision": "FALLBACK_WEB" if dynamic_settings.get("rag.enable_web_search", True) else "ABSTAIN",
+                "reasons": ["No evidence chunks retrieved."],
+            }
+            safety_exp = confidence_calibrator.build_safety_explanation(
+                trust_eval=trust_eval,
+                c_vector=c_vector,
+                consensus_mat=consensus_mat,
+                citations=[],
+                is_security_query=is_sec,
+            )
         else:
             documents_text = [item.content for item in fused_items]
             rerank_scores = await asyncio.to_thread(rerank_manager.rerank, query, documents_text)
@@ -302,6 +315,13 @@ async def retrieve_and_orchestrate(
                 is_security_query=is_sec,
             )
             sufficient = trust_eval["decision"] in {"GENERATE", "GENERATE_WITH_WARNING"}
+            safety_exp = confidence_calibrator.build_safety_explanation(
+                trust_eval=trust_eval,
+                c_vector=c_vector,
+                consensus_mat=consensus_mat,
+                citations=citations,
+                is_security_query=is_sec,
+            )
 
 
         # Exa Web Search Fallback if insufficient
@@ -328,6 +348,8 @@ async def retrieve_and_orchestrate(
                 "confidence_calibrated": calibrated_score,
                 "fallback_triggered": fallback_triggered,
                 "latency_ms": retrieval_latency,
+                "trust_decision": trust_eval["decision"],
+                "safety_explanation": safety_exp,
             },
             retrieved_count=len(fused_items),
             sufficient=sufficient or bool(exa_answer),

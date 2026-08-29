@@ -2,6 +2,33 @@ import { useCallback, useRef, useState } from "react";
 import { streamAssistantChat } from "../lib/api/assistant";
 import type { AssistantCitation, ChatMessage } from "../types/api";
 
+export interface SafetyEvidenceItem {
+  source_id: string;
+  source_type: string;
+  filename: string;
+  file_path?: string;
+  line_number?: number;
+  cwe_id?: string;
+  cve?: string;
+  severity?: string;
+  security_property?: string;
+  excerpt: string;
+}
+
+export interface SafetyExplanationData {
+  decision: string;
+  reason: string;
+  policy_trigger: string;
+  trust_score: number;
+  agreement_score: number;
+  contradiction_count: number;
+  supporting_evidence: SafetyEvidenceItem[];
+  contradicting_evidence: SafetyEvidenceItem[];
+  evidence_relationship: string;
+  nli_confidence: number;
+  explanation: string;
+}
+
 export interface AssistantChatMessage {
   id: string;
   role: "user" | "assistant";
@@ -13,6 +40,7 @@ export interface AssistantChatMessage {
   isInsufficientContext?: boolean;
   isStreaming?: boolean;
   error?: string;
+  safetyExplanation?: SafetyExplanationData;
 }
 
 export function useAssistantChat() {
@@ -53,6 +81,7 @@ export function useAssistantChat() {
                 citations: event.citations,
                 confidence: event.calibrated_trust_score ?? event.confidence,
                 retrievedCount: event.retrieved_count,
+                safetyExplanation: event.reasoning_trace?.safety_explanation,
               }),
             onToken: (text) =>
               setMessages((prev) =>

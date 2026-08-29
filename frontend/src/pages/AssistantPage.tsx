@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback, type FormEvent } from "react";
-import { Bot, Send, Sparkles, ThumbsDown, ThumbsUp, User as UserIcon, XCircle, ChevronDown } from "lucide-react";
+import { Bot, Send, Sparkles, ThumbsDown, ThumbsUp, User as UserIcon, XCircle, ChevronDown, ShieldAlert, CheckCircle2 } from "lucide-react";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -63,6 +63,67 @@ function FeedbackButtons({ messageId }: { messageId: string }) {
   );
 }
 
+function SafetyGateBanner({ explanation }: { explanation: NonNullable<AssistantChatMessage["safetyExplanation"]> }) {
+  const isBlock = explanation.policy_trigger === "CRITICAL_CONTRADICTION" || explanation.decision === "FALLBACK_WEB" || explanation.decision === "ABSTAIN";
+
+  return (
+    <div className={cn(
+      "w-full rounded-xl border p-3.5 text-xs space-y-2.5 transition-all",
+      isBlock ? "border-amber-500/40 bg-amber-500/10 text-amber-200" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+    )}>
+      <div className="flex items-center justify-between font-semibold">
+        <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
+          {isBlock ? (
+            <>
+              <ShieldAlert className="size-4 text-amber-400 shrink-0" />
+              <span className="text-amber-400">Answer withheld because conflicting evidence was detected</span>
+            </>
+          ) : (
+            <>
+              <CheckCircle2 className="size-4 text-emerald-400 shrink-0" />
+              <span className="text-emerald-400">Answer generated from trusted evidence</span>
+            </>
+          )}
+        </span>
+        <Badge tone={isBlock ? "warning" : "success"}>{explanation.policy_trigger}</Badge>
+      </div>
+
+      <p className="text-muted-foreground leading-relaxed text-xs">{explanation.explanation}</p>
+
+      {/* Contradiction Evidence Inspection Component */}
+      {explanation.contradicting_evidence && explanation.contradicting_evidence.length > 0 && (
+        <details className="mt-2 text-xs border-t border-border/40 pt-2 cursor-pointer group">
+          <summary className="font-semibold text-amber-300 hover:underline flex items-center gap-1">
+            <span>Inspect Contradictory Evidence Details & NLI Reasoning</span>
+            <ChevronDown className="size-3 transition-transform group-open:rotate-180" />
+          </summary>
+          <div className="mt-2.5 space-y-2 font-mono text-[11px]">
+            {explanation.contradicting_evidence.map((ev, idx) => (
+              <div key={idx} className="rounded-lg border border-border/60 bg-card p-2.5 space-y-1">
+                <div className="flex items-center justify-between text-foreground font-medium">
+                  <span className="text-amber-400 font-bold">
+                    Evidence {idx === 0 ? "A" : "B"}: {ev.file_path ? `${ev.file_path}:${ev.line_number || 1}` : ev.filename}
+                  </span>
+                  {ev.severity && <Badge tone={ev.severity === "CRITICAL" || ev.severity === "HIGH" ? "danger" : "warning"}>{ev.severity}</Badge>}
+                </div>
+                {ev.security_property && <div className="text-muted-foreground text-[10px]">Property: {ev.security_property}</div>}
+                {ev.cwe_id && <div className="text-muted-foreground text-[10px]">CWE: {ev.cwe_id} {ev.cve ? `| CVE: ${ev.cve}` : ""}</div>}
+                <p className="mt-1 text-muted-foreground text-[11px] whitespace-pre-wrap leading-relaxed">{ev.excerpt}</p>
+              </div>
+            ))}
+            <div className="flex flex-wrap gap-4 text-[10px] text-muted-foreground pt-1 border-t border-border/30">
+              <span>Relationship: <strong className="text-foreground">{explanation.evidence_relationship}</strong></span>
+              <span>NLI Confidence: <strong className="text-foreground">{Math.round(explanation.nli_confidence * 100)}%</strong></span>
+              <span>Agreement Score: <strong className="text-foreground">{explanation.agreement_score}</strong></span>
+              <span>Trust Score: <strong className="text-foreground">{explanation.trust_score}</strong></span>
+            </div>
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
 function MessageBubble({ message }: { message: AssistantChatMessage }) {
   const isUser = message.role === "user";
   return (
@@ -79,6 +140,11 @@ function MessageBubble({ message }: { message: AssistantChatMessage }) {
 
       {/* Bubble */}
       <div className={cn("flex flex-col gap-2 min-w-0", isUser ? "items-end max-w-[70%]" : "items-start w-full max-w-[85%]")}>
+        {/* Safety Gate Banner */}
+        {!isUser && !message.isStreaming && message.safetyExplanation && (
+          <SafetyGateBanner explanation={message.safetyExplanation} />
+        )}
+
         <div
           className={cn(
             "rounded-2xl px-4 py-3 text-sm leading-relaxed break-words w-full",

@@ -144,5 +144,170 @@ class ConfidenceCalibrator:
             "reasons": reasons if reasons else ["High confidence evidence alignment confirmed."],
         }
 
+    def build_safety_explanation(
+        self,
+        trust_eval: Dict[str, Any],
+        c_vector: Dict[str, float],
+        consensus_mat: Optional[Dict[str, Any]] = None,
+        citations: Optional[List[Any]] = None,
+        is_security_query: bool = False,
+    ) -> Dict[str, Any]:
+        """Generates structured safety gate explanation detailing policy triggers and contradictory evidence."""
+        decision = trust_eval.get("decision", "GENERATE")
+        trust_score = trust_eval.get("trust_score", 1.0)
+        agreement_score = c_vector.get("C_agreement", 1.0)
+        retrieval_score = c_vector.get("C_retrieval", 1.0)
+
+        consensus_mat = consensus_mat or {}
+        citations = citations or []
+
+        contradiction_count = consensus_mat.get("contradiction_count", 0)
+        relationships = consensus_mat.get("relationships", [])
+
+        contradicting_pairs = [r for r in relationships if r.get("relationship") == "CONTRADICTS"]
+
+        # Policy Trigger Identification
+        if contradiction_count > 0 or agreement_score <= 0.20:
+            policy_trigger = "CRITICAL_CONTRADICTION"
+            reason = "Conflicting security evidence detected."
+        elif is_security_query and trust_score < 0.75:
+            policy_trigger = "SECURITY_QUERY_LOW_CONFIDENCE"
+            reason = "Security query evidence confidence below threshold."
+        elif retrieval_score < 0.35:
+            policy_trigger = "LOW_RETRIEVAL_SIMILARITY"
+            reason = "Low retrieval similarity score from vector store."
+        elif trust_score < 0.70:
+            policy_trigger = "CONFIDENCE_THRESHOLD_OVERRIDE"
+            reason = "Overall trust score below minimum safety threshold."
+        else:
+            policy_trigger = "NORMAL_CONFIRMED"
+            reason = "Answer generated from trusted evidence."
+
+        # Map Citations for Quick Evidence Lookup
+        cit_map = {}
+        for c in citations:
+            doc_id = getattr(c, "document_id", None) or getattr(c, "source_id", None) or (c.get("document_id") if isinstance(c, dict) else None)
+            if doc_id:
+                cit_map[doc_id] = c
+
+        def _format_ev(item: Any, default_id: str, default_excerpt: str = "") -> Dict[str, Any]:
+            if isinstance(item, dict):
+                src_id = item.get("source_id") or item.get("document_id") or default_id
+                src_type = item.get("source_type", "security_finding")
+                filename = item.get("filename") or item.get("title") or src_id
+                file_path = item.get("file_path")
+                line_number = item.get("line_number")
+                cwe_id = item.get("cwe_id")
+                cve = item.get("cve")
+                severity = item.get("severity")
+                excerpt = item.get("excerpt") or item.get("content") or default_excerpt
+            elif hasattr(item, "document_id"):
+                src_id = getattr(item, "document_id", default_id)
+                src_type = getattr(item, "source_type", "knowledge_doc")
+                filename = getattr(item, "filename", src_id)
+                file_path = getattr(item, "file_path", None)
+                line_number = getattr(item, "line_number", None)
+                cwe_id = getattr(item, "cwe_id", None)
+                cve = getattr(item, "cve", None)
+                severity = getattr(item, "severity", None)
+                excerpt = getattr(item, "excerpt", default_excerpt)
+            else:
+                src_id = default_id
+                src_type = "unknown"
+                filename = default_id
+                file_path = None
+                line_number = None
+                cwe_id = None
+                cve = None
+                severity = None
+                excerpt = default_excerpt
+
+            sec_prop = "GENERAL_SECURITY"
+            exc_lower = (excerpt or "").lower()
+            if "auth" in exc_lower or "login" in exc_lower or "token" in exc_lower:
+                sec_prop = "AUTHORIZATION_AUTHENTICATION"
+            elif "sql" in exc_lower or "query" in exc_lower or "database" in exc_lower:
+                sec_prop = "INPUT_VALIDATION_SQLI"
+            elif "crypto" in exc_lower or "cipher" in exc_lower or "key" in exc_lower:
+                sec_prop = "CRYPTOGRAPHY"
+
+            return {
+                "source_id": src_id,
+                "source_type": src_type,
+                "filename": filename,
+                "file_path": file_path,
+                "line_number": line_number,
+                "cwe_id": cwe_id,
+                "cve": cve,
+                "severity": severity,
+                "security_property": sec_prop,
+                "excerpt": (excerpt[:200] + "...") if len(excerpt) > 200 else excerpt,
+            }
+
+        # Build Contradicting Evidence Pair
+        contradicting_evidence = []
+        evidence_relationship = "RELATED"
+        nli_confidence = 0.0
+
+        if contradicting_pairs:
+            c_pair = contradicting_pairs[0]
+            evidence_relationship = "CONTRADICTS"
+            nli_confidence = float(c_pair.get("confidence", 0.85))
+
+            id_a = c_pair.get("item_a_id", "Evidence_A")
+            id_b = c_pair.get("item_b_id", "Evidence_B")
+
+            ev_a = cit_map.get(id_a)
+            ev_b = cit_map.get(id_b)
+
+            contradicting_evidence.append(_format_ev(ev_a, id_a, c_pair.get("item_a_excerpt", "")))
+            contradicting_evidence.append(_format_ev(ev_b, id_b, c_pair.get("item_b_excerpt", "")))
+
+        supporting_evidence = [_format_ev(c, f"doc-{i}") for i, c in enumerate(citations)]
+
+        if policy_trigger == "CRITICAL_CONTRADICTION":
+            if len(contradicting_evidence) >= 2:
+                e1, e2 = contradicting_evidence[0], contradicting_evidence[1]
+                loc1 = f"{e1['file_path']}:{e1['line_number']}" if e1.get("file_path") else e1["filename"]
+                loc2 = f"{e2['file_path']}:{e2['line_number']}" if e2.get("file_path") else e2["filename"]
+                explanation_text = (
+                    f"Two evidence items ({loc1} and {loc2}) assert incompatible security states with NLI confidence {nli_confidence:.2f}. "
+                    f"Although retrieval score ({retrieval_score:.2f}) and source reliability are strong, the safety policy overrides "
+                    f"generation because the evidence agreement score ({agreement_score:.2f}) fell below the contradiction threshold (0.20)."
+                )
+            else:
+                explanation_text = (
+                    f"Conflicting security evidence detected by NLI consensus engine (agreement score {agreement_score:.2f}). "
+                    f"The Two-Stage Safety Policy Gate overrode text generation to prevent unverified vulnerability assertions."
+                )
+        elif policy_trigger == "SECURITY_QUERY_LOW_CONFIDENCE":
+            explanation_text = (
+                f"Security query evidence confidence ({trust_score:.2f}) fell below the required threshold (0.75). "
+                f"Output downgraded to web search fallback to prevent unverified security assertion."
+            )
+        elif policy_trigger == "LOW_RETRIEVAL_SIMILARITY":
+            explanation_text = f"Vector retrieval similarity ({retrieval_score:.2f}) was insufficient to ensure evidence grounding."
+        elif policy_trigger == "CONFIDENCE_THRESHOLD_OVERRIDE":
+            explanation_text = f"Overall trust score ({trust_score:.2f}) was below the minimum safety policy threshold (0.70)."
+        else:
+            explanation_text = (
+                f"Answer generated from trusted evidence. Evidence agreement ({agreement_score:.2f}) "
+                f"and trust score ({trust_score:.2f}) satisfy safety policy constraints."
+            )
+
+        return {
+            "decision": decision,
+            "reason": reason,
+            "policy_trigger": policy_trigger,
+            "trust_score": trust_score,
+            "agreement_score": agreement_score,
+            "contradiction_count": contradiction_count,
+            "supporting_evidence": supporting_evidence,
+            "contradicting_evidence": contradicting_evidence,
+            "evidence_relationship": evidence_relationship,
+            "nli_confidence": nli_confidence,
+            "explanation": explanation_text,
+        }
+
 
 confidence_calibrator = ConfidenceCalibrator()
