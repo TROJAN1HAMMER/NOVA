@@ -1,7 +1,7 @@
 # NOVA — Neural Orchestrated Vector Assistant
 
 > **Enterprise Security-Intelligence & Evidence-Grounded AI Platform**
-> **System Architecture Version**: `2.0-RELEASE-CANDIDATE`
+> **System Architecture Version**: `2.0-PUBLIC-RELEASE`
 > **Repository Baseline**: `main`
 > **Status**: **VERIFIED & FROZEN**
 
