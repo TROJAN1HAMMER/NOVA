@@ -15,7 +15,7 @@ from app.api.v1.endpoints.reports import router as reports_router
 from app.api.v1.endpoints.repositories import router as repositories_router
 from app.api.v1.endpoints.risk import router as risk_router
 from app.api.v1.endpoints.settings import router as settings_router
-from app.api.v1.endpoints.webhooks import router as webhooks_router
+from app.api.v1.endpoints.demo import router as demo_router
 from app.api.v1.security_intelligence import router as security_intelligence_router
 from app.auth.admin_router import router as auth_admin_router
 from app.auth.router import router as auth_router
@@ -34,6 +34,7 @@ api_router.include_router(rag_operations_router, tags=["RAG Operations"])
 api_router.include_router(reports_router, tags=["Reports"])
 api_router.include_router(settings_router, tags=["System Settings"])
 api_router.include_router(security_intelligence_router, tags=["Security Intelligence"])
+api_router.include_router(demo_router, tags=["Canonical Demo"])
 api_router.include_router(auth_router, tags=["Auth"])
 api_router.include_router(auth_sso_router, tags=["Auth — SSO"])
 api_router.include_router(auth_admin_router, tags=["Auth — Admin"])
