@@ -1,4 +1,4 @@
-import type { HTMLAttributes, ReactNode } from "react";
+import { forwardRef, type HTMLAttributes, type ReactNode } from "react";
 import { cn } from "../../lib/utils";
 import { useCardSpotlight, CARD_SPOTLIGHT_DIAMETER_PX } from "../../hooks/useCardSpotlight";
 
@@ -58,7 +58,7 @@ export function Card({ className, interactive, children, ...props }: CardProps) 
           willChange: "transform",
         }}
       />
-      <div className="relative z-[1]">{children}</div>
+      <div className="relative z-[1] flex flex-col flex-1 min-h-0 h-full">{children}</div>
     </div>
   );
 }
@@ -81,6 +81,8 @@ export function CardHeader({
   );
 }
 
-export function CardContent({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("p-5", className)} {...props} />;
-}
+export const CardContent = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
+  function CardContent({ className, ...props }, ref) {
+    return <div ref={ref} className={cn("p-5", className)} {...props} />;
+  }
+);

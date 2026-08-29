@@ -98,6 +98,12 @@ async def _process(task, document_id: str) -> None:
             ]
             await vector_store.insert_chunks(db, document_id=doc_uuid, chunks=chunk_dicts)
 
+            try:
+                from app.services.knowledge_base.graph_builder import extract_and_save_graph_entities
+                await extract_and_save_graph_entities(db, document_id=doc_uuid, chunks=chunk_dicts)
+            except Exception as graph_err:
+                logger.warning("knowledge_tasks.graph_extraction_failed", error=str(graph_err))
+
             page_count = len(pages) if pages and pages[0].page_number is not None else None
             await repo.mark_indexed(doc_uuid, page_count=page_count, chunk_count=len(chunks))
             await db.commit()

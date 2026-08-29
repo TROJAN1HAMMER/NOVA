@@ -47,7 +47,7 @@ export default function ExecutiveDashboardPage() {
 
   const summary: ExecutiveSummary = useMemo(() => {
     const docs = docsData?.documents ?? [];
-    const indexed = docs.filter((d) => d.status === "indexed");
+    const indexed = docs.filter((d) => ["indexed", "ready", "processed"].includes((d.status ?? "").toLowerCase()));
     const totalChunks = indexed.reduce((sum, d) => sum + (d.chunk_count ?? 0), 0);
 
     return {

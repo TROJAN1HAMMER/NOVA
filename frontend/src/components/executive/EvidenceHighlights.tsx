@@ -103,29 +103,25 @@ export function EvidenceHighlights({ evidence }: { evidence: ExecutiveEvidenceSn
           )}
         </div>
 
-        <div className="grid w-full grid-cols-2 gap-3 sm:w-auto sm:flex-1 sm:grid-cols-3">
-          <div>
+        <div className="grid w-full grid-cols-1 gap-3 sm:flex-1 sm:grid-cols-3">
+          <div className="rounded-lg border border-border/40 bg-card/60 p-3">
             <p className="text-xs text-muted-foreground">Documents indexed</p>
-            <p className="text-lg font-semibold tabular-nums">
+            <p className="text-xl font-bold tabular-nums text-foreground mt-0.5">
               {totalSources}
             </p>
           </div>
-          {wow && (
-            <>
-              <div>
-                <p className="text-xs text-muted-foreground">Operations this week</p>
-                <p className="text-lg font-semibold tabular-nums">
-                  {wow.scans_this_week}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">vs. last week</p>
-                <p className="text-lg font-semibold tabular-nums">
-                  {wow.scans_last_week}
-                </p>
-              </div>
-            </>
-          )}
+          <div className="rounded-lg border border-border/40 bg-card/60 p-3">
+            <p className="text-xs text-muted-foreground">Operations this week</p>
+            <p className="text-xl font-bold tabular-nums text-foreground mt-0.5">
+              {wow?.scans_this_week ?? totalOps}
+            </p>
+          </div>
+          <div className="rounded-lg border border-border/40 bg-card/60 p-3">
+            <p className="text-xs text-muted-foreground">vs. last week</p>
+            <p className="text-xl font-bold tabular-nums text-foreground mt-0.5">
+              {wow?.scans_last_week ?? 0}
+            </p>
+          </div>
         </div>
       </div>
 

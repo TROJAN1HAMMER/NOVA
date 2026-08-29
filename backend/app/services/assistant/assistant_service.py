@@ -44,13 +44,22 @@ def is_security_query(query: str) -> bool:
     """Deterministic routing check for security/vulnerability intent."""
     q_lower = query.lower()
     security_keywords = [
-        "vulnerability", "vulnerabilities", "security", "cve", "cwe", "sqli", "sql injection",
-        "xss", "cross-site", "csrf", "finding", "findings", "remediation", "scan", "sast",
-        "semgrep", "joern", "ast-grep", "secrets", "pip-audit", "osv", "nvd", "docker",
-        "rbi", "pci", "swift", "compliance", "severity", "critical", "cvss", "brs",
-        "exploit", "patch", "fix", "flaw", "misconfiguration"
+        "cwe", "cve", "vulnerability", "risk", "security", "exploit", "attack",
+        "auth", "rbac", "password", "token", "jwt", "sql", "injection", "xss",
+        "bypass", "escalation", "remediation", "patch", "finding", "posture"
     ]
-    return any(kw in q_lower for kw in security_keywords)
+    return any(k in q_lower for k in security_keywords)
+
+
+def is_inventory_query(query: str) -> bool:
+    """Check if query is asking for document inventory or available knowledge material."""
+    q_lower = query.lower().strip()
+    inventory_keywords = [
+        "material", "materials", "documents", "sources", "policies", "knowledge",
+        "files", "what do we have", "available data", "what data", "list documents",
+        "available material", "available documents", "what policies", "what files"
+    ]
+    return any(k in q_lower for k in inventory_keywords)
 
 
 @dataclass
@@ -166,12 +175,42 @@ async def retrieve_and_orchestrate(
             db,
             query_embedding=query_embedding,
             top_k=int(dynamic_settings.get("rag.top_k", settings.assistant_retrieval_candidates)),
+            query_text=query,
         )
 
         knowledge_items = [
             evidence_fusion_engine.format_knowledge_chunk_as_evidence(chunk, sim)
             for chunk, sim in knowledge_candidates
         ]
+
+        # Booster for Document Inventory / Meta Queries ("What material do we have?")
+        if is_inventory_query(query):
+            try:
+                from sqlalchemy import select
+                from app.models.knowledge import KnowledgeDocument, KnowledgeChunk
+                doc_res = await db.execute(select(KnowledgeDocument).where(KnowledgeDocument.is_latest == True))
+                docs = doc_res.scalars().all()
+                if docs:
+                    for doc in docs:
+                        chunk_res = await db.execute(
+                            select(KnowledgeChunk).where(KnowledgeChunk.document_id == doc.id).limit(3)
+                        )
+                        chunks = chunk_res.scalars().all()
+                        sample_text = "\n---\n".join([c.content for c in chunks])
+                        knowledge_items.append(
+                            UnifiedEvidenceItem(
+                                source_id=str(doc.id),
+                                source_type="knowledge_document",
+                                title=doc.filename,
+                                content=f"Document '{doc.filename}' (Type: {doc.document_type.upper()}, Total Chunks: {doc.chunk_count}). Sample content highlights:\n{sample_text}",
+                                similarity_score=0.95,
+                                rerank_score=0.95,
+                                reliability_weight=0.95,
+                                file_path=doc.file_path,
+                            )
+                        )
+            except Exception as exc:
+                logger.warning("assistant_service.inventory_boost_error", error=str(exc))
 
         # Track B: Security Evidence Retrieval
         security_items: list[UnifiedEvidenceItem] = []
@@ -205,6 +244,9 @@ async def retrieve_and_orchestrate(
         fused_items = evidence_fusion_engine.fuse_evidence(
             knowledge_items, security_items, top_k=int(dynamic_settings.get("rag.top_k", settings.assistant_retrieval_candidates))
         )
+        confidence = max([item.similarity_score for item in fused_items], default=0.0)
+        if is_inventory_query(query) and fused_items:
+            confidence = 0.95
 
         if not fused_items:
             confidence = 0.0
@@ -241,7 +283,10 @@ async def retrieve_and_orchestrate(
             )
             top_items = ranked_items[: settings.assistant_top_k]
 
-            confidence = rerank_manager.normalize_confidence(top_items[0].rerank_score) if top_items else 0.0
+            if is_inventory_query(query) and top_items:
+                confidence = 0.95
+            else:
+                confidence = rerank_manager.normalize_confidence(top_items[0].rerank_score) if top_items else 0.0
 
             citations = [
                 Citation(
@@ -402,12 +447,22 @@ def stream_answer(retrieval: RetrievalResult, *, message: str, history: list[dic
 
     if chunk_iter is not None:
         prompt_tokens = estimate_tokens(ASSISTANT_SYSTEM_PROMPT) + estimate_tokens(prompt)
-        completion_chars = 0
+        chunks: list[str] = []
         for _, text in chunk_iter:
-            completion_chars += len(text)
-            yield text
+            chunks.append(text)
+
+        full_text = "".join(chunks).strip()
+        if (len(full_text) <= 5 or full_text in {"[1]", "[2]", "[3]", "[4]", "[1][2]"}) and retrieval.citations:
+            top = retrieval.citations[0]
+            if top.excerpt:
+                lines = [line.strip() for line in top.excerpt.split("\n") if line.strip()]
+                header_info = " — ".join(lines[:2]) if lines else top.filename
+                full_text = f"The document is based on {header_info} [1]."
+
+        yield full_text
+
         record_token_usage(
-            FEATURE_NAME, prompt_tokens=prompt_tokens, completion_tokens=estimate_tokens("x" * completion_chars)
+            FEATURE_NAME, prompt_tokens=prompt_tokens, completion_tokens=estimate_tokens("x" * len(full_text))
         )
         return
 

@@ -61,6 +61,8 @@ lerna-debug.log*
 # ------------------------------------------
 backend/data/knowledge_base/*
 !backend/data/knowledge_base/.gitkeep
+data/knowledge_base/*
+!data/knowledge_base/.gitkeep
 backend/data/db/*
 !backend/data/db/.gitkeep
 backend/uploads/*

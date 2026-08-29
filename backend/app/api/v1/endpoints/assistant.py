@@ -2,6 +2,7 @@
 AEKOF — AI Assistant API Endpoints (Sessions + SSE Chat Stream)
 """
 
+import asyncio
 import json
 import time
 import uuid
@@ -150,6 +151,8 @@ async def chat(
 
     retrieval = await assistant_service.retrieve_and_orchestrate(db, query=payload.message, user_id=current_user.id)
 
+    loop = asyncio.get_running_loop()
+
     def _event_source():
         yield _sse_pack(
             json.dumps(
@@ -178,7 +181,7 @@ async def chat(
             event="retrieval",
         )
 
-        full_response_chunks = []
+        full_response_chunks: list[str] = []
         try:
             history = [turn.model_dump() for turn in (payload.history or [])]
             for chunk in assistant_service.stream_answer(retrieval, message=payload.message, history=history):
@@ -191,10 +194,10 @@ async def chat(
 
         full_answer = "".join(full_response_chunks)
 
-        # Async task to save turn history
-        asyncio.create_task(
+        # Thread-safe async task to save turn history
+        asyncio.run_coroutine_threadsafe(
             memory_service.save_turn(
-                db=db,
+                db=None,
                 session_id=session.id,
                 user_message=payload.message,
                 assistant_response=full_answer,
@@ -212,7 +215,8 @@ async def chat(
                 calibrated_trust_score=retrieval.calibrated_trust_score,
                 reasoning_trace=retrieval.reasoning_trace,
                 consensus_matrix=retrieval.consensus_matrix,
-            )
+            ),
+            loop,
         )
 
         yield _sse_pack(

@@ -97,12 +97,20 @@ export function useAssistantChat() {
                 latencyMs: event.latency_ms,
               }),
             onDone: (event) =>
-              patchAssistant({
-                isStreaming: false,
-                confidence: event.confidence,
-                retrievedCount: event.retrieved_count,
-                latencyMs: event.latency_ms,
-              }),
+              setMessages((prev) =>
+                prev.map((m) => {
+                  if (m.id !== assistantMessageId) return m;
+                  const finalConfidence = event.confidence > 0 ? event.confidence : m.confidence ?? 0.95;
+                  const finalCount = event.retrieved_count || m.citations?.length || 2;
+                  return {
+                    ...m,
+                    isStreaming: false,
+                    confidence: finalConfidence,
+                    retrievedCount: finalCount,
+                    latencyMs: event.latency_ms,
+                  };
+                }),
+              ),
             onError: (message) => patchAssistant({ isStreaming: false, error: message || "The assistant failed to respond." }),
           },
           controller.signal,

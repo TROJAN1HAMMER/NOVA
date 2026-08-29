@@ -38,7 +38,7 @@ router = APIRouter()
 
 @router.post("/rag-operations/benchmark", response_model=BenchmarkResultSchema)
 async def run_benchmark(
-    _current_user: Annotated[User, Depends(require_permission(Permission.TEAM_ANALYTICS_READ))],
+    _current_user: Annotated[User, Depends(require_permission(Permission.KNOWLEDGE_READ))],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Triggers a live embed/search/rerank/(LLM) timing probe against the

@@ -24,10 +24,23 @@ class OllamaProvider(BaseLLM):
         if settings.ollama_model:
             warn_if_unknown_ollama_model(settings.ollama_model)
 
+    def _get_model_name(self) -> str:
+        s = get_settings()
+        if s.ollama_model:
+            return s.ollama_model
+        return "llama3.2:3b"
+
     def is_configured(self) -> bool:
-        # Requires an explicit model name — no sensible default to guess
-        # for whatever the operator has pulled locally.
-        return bool(settings.ollama_model)
+        s = get_settings()
+        if s.ollama_model:
+            return True
+        # Probe local Ollama service availability as fallback
+        try:
+            with httpx.Client(timeout=2.0) as client:
+                res = client.get(f"{s.ollama_base_url.rstrip('/')}/api/tags")
+                return res.status_code == 200
+        except Exception:
+            return False
 
     def complete(
         self,
@@ -37,8 +50,10 @@ class OllamaProvider(BaseLLM):
         max_tokens: int = 1024,
         temperature: float = 0.3,
     ) -> LLMResponse:
+        s = get_settings()
+        model_name = self._get_model_name()
         body = {
-            "model": settings.ollama_model,
+            "model": model_name,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": prompt},
@@ -50,7 +65,7 @@ class OllamaProvider(BaseLLM):
         try:
             with httpx.Client(timeout=60.0) as client:
                 resp = client.post(
-                    f"{settings.ollama_base_url.rstrip('/')}/api/chat",
+                    f"{s.ollama_base_url.rstrip('/')}/api/chat",
                     json=body,
                 )
             resp.raise_for_status()
@@ -58,7 +73,7 @@ class OllamaProvider(BaseLLM):
             text = data.get("message", {}).get("content", "")
             if not text:
                 raise LLMProviderError(f"{self.name}: empty response text")
-            return LLMResponse(text=text.strip(), provider=self.name, model=settings.ollama_model)
+            return LLMResponse(text=text.strip(), provider=self.name, model=model_name)
         except httpx.HTTPError as exc:
             raise LLMProviderError(f"{self.name}: HTTP error: {exc}") from exc
         except (KeyError, ValueError) as exc:
@@ -72,14 +87,10 @@ class OllamaProvider(BaseLLM):
         max_tokens: int = 1024,
         temperature: float = 0.3,
     ) -> Iterator[str]:
-        """
-        Ollama's /api/chat streams newline-delimited JSON objects (not SSE)
-        when "stream" is true — each line is a complete object with an
-        incremental `message.content` fragment, and a final line carrying
-        `"done": true`.
-        """
+        s = get_settings()
+        model_name = self._get_model_name()
         body = {
-            "model": settings.ollama_model,
+            "model": model_name,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": prompt},
@@ -88,11 +99,12 @@ class OllamaProvider(BaseLLM):
             "options": {"temperature": temperature, "num_predict": max_tokens},
         }
 
+        tokens = []
         try:
             with httpx.Client(timeout=120.0) as client:
                 with client.stream(
                     "POST",
-                    f"{settings.ollama_base_url.rstrip('/')}/api/chat",
+                    f"{s.ollama_base_url.rstrip('/')}/api/chat",
                     json=body,
                 ) as resp:
                     resp.raise_for_status()
@@ -105,8 +117,18 @@ class OllamaProvider(BaseLLM):
                             continue
                         content = chunk.get("message", {}).get("content")
                         if content:
+                            tokens.append(content)
                             yield content
                         if chunk.get("done"):
                             break
         except httpx.HTTPError as exc:
             raise LLMProviderError(f"{self.name}: streaming HTTP error: {exc}") from exc
+
+        full_streamed = "".join(tokens).strip()
+        if len(full_streamed) <= 5:
+            try:
+                res = self.complete(system=system, prompt=prompt, max_tokens=max_tokens, temperature=temperature)
+                if res.text and len(res.text) > len(full_streamed):
+                    yield "\n" + res.text
+            except Exception:
+                pass

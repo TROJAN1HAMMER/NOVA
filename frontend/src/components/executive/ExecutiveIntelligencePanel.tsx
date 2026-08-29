@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { motion } from "framer-motion";
-import { Bot, Download, Info, Send, Sparkles, User as UserIcon, XCircle } from "lucide-react";
+import { Bot, ChevronDown, Download, Info, Send, Sparkles, User as UserIcon, XCircle } from "lucide-react";
 import { Card, CardContent, CardHeader } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { EmptyState } from "../ui/EmptyState";
@@ -71,7 +71,7 @@ function MessageBubble({
         {isUser ? <UserIcon className="size-4" /> : <Bot className="size-4" />}
       </div>
 
-      <div className={cn("w-full min-w-0 space-y-2 sm:max-w-[85%] lg:max-w-3xl", isUser && "flex flex-col items-end")}>
+      <div className={cn("w-full min-w-0 space-y-3", isUser ? "max-w-xl flex flex-col items-end" : "flex-1")}>
         {isUser ? (
           <div className="rounded-xl bg-primary px-4 py-2.5 text-sm text-primary-foreground">
             <p className="whitespace-pre-wrap">{message.content}</p>
@@ -100,7 +100,7 @@ function MessageBubble({
             </div>
           </div>
         ) : (
-          <div className="w-full min-w-0 rounded-xl border border-border bg-card px-4 py-3">
+          <div className="w-full min-w-0 rounded-xl border border-border bg-card p-4 sm:p-5">
             {message.isStreaming && !message.content ? (
               <span className="inline-flex gap-1 py-1">
                 <span className="size-1.5 animate-pulse rounded-full bg-muted-foreground" />
@@ -159,21 +159,41 @@ function MessageBubble({
 export function ExecutiveIntelligencePanel() {
   const { messages, sendMessage, isSending, stop, clear } = useExecutiveIntelligence();
   const [input, setInput] = useState("");
-  const scrollAnchorRef = useRef<HTMLDivElement>(null);
+  const [showScrollBtn, setShowScrollBtn] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const isNearBottomRef = useRef(true);
+
+  const handleScroll = () => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    isNearBottomRef.current = distFromBottom < 80;
+    setShowScrollBtn(distFromBottom > 150);
+  };
 
   useEffect(() => {
-    scrollAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    if (isNearBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
   }, [messages]);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    setShowScrollBtn(false);
+  };
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
     if (!input.trim() || isSending) return;
+    isNearBottomRef.current = true;
     sendMessage(input);
     setInput("");
   };
 
   const handleSuggested = (question: string) => {
     if (isSending) return;
+    isNearBottomRef.current = true;
     sendMessage(question);
   };
 
@@ -191,42 +211,58 @@ export function ExecutiveIntelligencePanel() {
         }
       />
 
-      <CardContent className="flex-1 space-y-4 overflow-y-auto">
-        {messages.length === 0 ? (
-          <div className="space-y-4">
-            <EmptyState
-              icon={<Sparkles className="size-10" />}
-              title="Ask leadership's questions directly"
-              description="Every answer is grounded in real scan history and cites its evidence — nothing is invented."
-            />
-            <div className="flex flex-wrap justify-center gap-2">
-              {SUGGESTED_QUESTIONS.map((question) => (
-                <button
-                  key={question}
-                  type="button"
-                  onClick={() => handleSuggested(question)}
-                  className="rounded-full border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
-                >
-                  {question}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : (
-          messages.map((message, index) => {
-            const precedingUserMessage = message.role === "assistant" ? messages[index - 1] : undefined;
-            return (
-              <MessageBubble
-                key={message.id}
-                message={message}
-                question={precedingUserMessage?.content}
-                onSuggested={handleSuggested}
+      <div className="relative flex-1 min-h-0 flex flex-col">
+        <CardContent
+          ref={scrollContainerRef}
+          onScroll={handleScroll}
+          className="flex-1 space-y-4 overflow-y-auto min-h-0"
+        >
+          {messages.length === 0 ? (
+            <div className="space-y-4">
+              <EmptyState
+                icon={<Sparkles className="size-10" />}
+                title="Ask leadership's questions directly"
+                description="Every answer is grounded in real scan history and cites its evidence — nothing is invented."
               />
-            );
-          })
+              <div className="flex flex-wrap justify-center gap-2">
+                {SUGGESTED_QUESTIONS.map((question) => (
+                  <button
+                    key={question}
+                    type="button"
+                    onClick={() => handleSuggested(question)}
+                    className="rounded-full border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+                  >
+                    {question}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            messages.map((message, index) => {
+              const precedingUserMessage = message.role === "assistant" ? messages[index - 1] : undefined;
+              return (
+                <MessageBubble
+                  key={message.id}
+                  message={message}
+                  question={precedingUserMessage?.content}
+                  onSuggested={handleSuggested}
+                />
+              );
+            })
+          )}
+          <div ref={messagesEndRef} className="h-1" />
+        </CardContent>
+
+        {showScrollBtn && (
+          <button
+            onClick={scrollToBottom}
+            className="absolute bottom-4 right-6 z-10 flex items-center gap-1.5 rounded-full border border-border/80 bg-card/90 backdrop-blur-md px-3 py-1.5 text-xs font-semibold text-foreground shadow-lg transition-all hover:bg-muted hover:scale-105"
+          >
+            <ChevronDown className="size-3.5 text-primary" />
+            Scroll to latest
+          </button>
         )}
-        <div ref={scrollAnchorRef} />
-      </CardContent>
+      </div>
 
       <form onSubmit={handleSubmit} className="flex items-center gap-2 border-t border-border p-4">
         <input

@@ -65,17 +65,18 @@ LOCAL_PROVIDER_NAMES = ("ollama", "vllm")
 
 
 def _resolve_provider_order() -> list[str]:
-    override = settings.ai_provider_priority.strip().lower()
+    s = get_settings()
+    override = s.ai_provider_priority.strip().lower()
     if override and override != "auto":
         return [p.strip() for p in override.split(",") if p.strip()]
 
-    mode = settings.ai_mode.strip().lower()
+    mode = s.ai_mode.strip().lower()
     if mode == "cloud":
         return list(CLOUD_PROVIDER_NAMES)
     if mode == "local":
         return list(LOCAL_PROVIDER_NAMES)
     if mode != "hybrid":
-        logger.warning("ai_gateway.unknown_ai_mode", ai_mode=settings.ai_mode, falling_back_to="hybrid")
+        logger.warning("ai_gateway.unknown_ai_mode", ai_mode=s.ai_mode, falling_back_to="hybrid")
     return list(LOCAL_PROVIDER_NAMES) + list(CLOUD_PROVIDER_NAMES)
 
 
@@ -232,7 +233,4 @@ _gateway: Optional[LLMGateway] = None
 
 
 def get_gateway() -> LLMGateway:
-    global _gateway
-    if _gateway is None:
-        _gateway = LLMGateway()
-    return _gateway
+    return LLMGateway()

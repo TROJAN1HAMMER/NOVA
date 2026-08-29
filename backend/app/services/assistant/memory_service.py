@@ -40,7 +40,7 @@ class MemoryService:
 
     async def save_turn(
         self,
-        db: AsyncSession,
+        db: Optional[AsyncSession],
         session_id: uuid.UUID,
         user_message: str,
         assistant_response: str,
@@ -50,6 +50,20 @@ class MemoryService:
         reasoning_trace: dict = None,
         consensus_matrix: dict = None,
     ) -> None:
+        if db is None:
+            from app.db.session import AsyncSessionLocal
+            async with AsyncSessionLocal() as session_db:
+                return await self.save_turn(
+                    db=session_db,
+                    session_id=session_id,
+                    user_message=user_message,
+                    assistant_response=assistant_response,
+                    citations=citations,
+                    confidence_vector=confidence_vector,
+                    calibrated_trust_score=calibrated_trust_score,
+                    reasoning_trace=reasoning_trace,
+                    consensus_matrix=consensus_matrix,
+                )
         result = await db.execute(select(ChatSession).where(ChatSession.id == session_id))
         session = result.scalar_one_or_none()
         if not session:

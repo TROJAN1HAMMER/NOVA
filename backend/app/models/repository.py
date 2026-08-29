@@ -41,6 +41,4 @@ class Repository(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
     # Relationships
-    scan_jobs: Mapped[List["ScanJob"]] = relationship(
-        "ScanJob", back_populates="repository", cascade="all, delete-orphan"
-    )
+    owner: Mapped[Optional["User"]] = relationship("User", foreign_keys=[owner_id])

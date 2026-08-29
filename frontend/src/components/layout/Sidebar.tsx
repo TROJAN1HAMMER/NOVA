@@ -6,7 +6,6 @@ import {
   Dna,
   FolderPlus,
   Gauge,
-  Menu,
   Network,
   Sparkles,
   UserCog,
@@ -54,19 +53,35 @@ export function Sidebar({
         expanded ? "w-64" : "w-16",
       )}
     >
-      <div className="flex h-16 shrink-0 items-center justify-between border-b border-border/40 px-3">
-        {expanded ? (
-          <NovaLogo size="sm" />
-        ) : (
-          <NovaLogo iconOnly size="sm" />
+      <div
+        className={cn(
+          "flex h-16 shrink-0 items-center border-b border-border/40 px-3 transition-all duration-300",
+          expanded ? "justify-between" : "justify-center",
         )}
-        <button
-          onClick={onToggle}
-          className="relative flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors duration-150 hover:bg-muted"
-          aria-label={expanded ? "Collapse navigation" : "Expand navigation"}
-        >
-          {expanded ? <X className="size-4" /> : <Menu className="size-4" />}
-        </button>
+      >
+        {expanded ? (
+          <>
+            <NovaLogo size="sm" />
+            <button
+              onClick={onToggle}
+              className="relative flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground"
+              aria-label="Collapse navigation"
+              title="Collapse sidebar"
+            >
+              <X className="size-4" />
+            </button>
+          </>
+        ) : (
+          <button
+            onClick={onToggle}
+            className="group relative flex size-10 items-center justify-center rounded-xl transition-all duration-200 hover:bg-primary/15 hover:scale-105"
+            aria-label="Expand navigation"
+            title="Expand navigation"
+          >
+            <NovaLogo iconOnly size="sm" />
+            <div className="absolute inset-0 rounded-xl border border-transparent group-hover:border-primary/40 transition-colors" />
+          </button>
+        )}
       </div>
 
       <nav className="flex-1 space-y-1 overflow-y-auto overflow-x-hidden p-2.5">
@@ -101,12 +116,12 @@ export function Sidebar({
 
       <div
         className={cn(
-          "overflow-hidden whitespace-nowrap border-t border-border/40 p-3 text-[11px] font-medium text-muted-foreground transition-opacity duration-200",
+          "overflow-hidden whitespace-nowrap border-t border-border/60 bg-muted/20 p-3.5 text-xs transition-opacity duration-200",
           expanded ? "opacity-100 delay-100" : "opacity-0",
         )}
       >
-        <span className="block font-semibold text-foreground">AEKOF Research Platform</span>
-        Enterprise Intelligence. Evolving.
+        <span className="block font-semibold text-foreground tracking-wide">NOVA Enterprise AI</span>
+        <span className="block text-[11px] text-muted-foreground font-medium mt-0.5">Security Intelligence Platform</span>
       </div>
     </aside>
   );

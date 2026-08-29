@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision = '0015_remove_legacy_scanner_tables'
+revision = '0015_remove_legacy_scanners'
 down_revision = '0014_security_intelligence'
 branch_labels = None
 depends_on = None

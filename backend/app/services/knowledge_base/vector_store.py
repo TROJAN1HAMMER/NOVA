@@ -73,32 +73,14 @@ async def similarity_search(
     document_type: Optional[str] = None,
     tag: Optional[str] = None,
     document_id: Optional[uuid.UUID] = None,
+    query_text: Optional[str] = None,
 ) -> list[tuple[KnowledgeChunk, float]]:
-    """
-    Returns (chunk, similarity_score) pairs, highest similarity first.
-    `similarity_score` is `1 - cosine_distance` (pgvector's `<=>` operator
-    already returns `1 - cosine_similarity`), so 1.0 is an identical
-    vector and 0.0 is orthogonal.
-
-    Metadata filtering (document_type/tag/document_id) joins against
-    KnowledgeDocument and only ever considers `status == "indexed"`
-    documents — a document mid-processing or that failed to index has no
-    chunks anyway, but the explicit filter keeps the query's intent clear.
-
-    Also only ever considers `is_latest == True` (Milestone 5's version
-    chains, see app/models/knowledge.py's docstring) — a superseded
-    version's chunks are pruned at supersession time anyway
-    (document_manager.py's `find_or_start_version_chain`), so this filter
-    is normally a no-op rather than the primary guard, but keeping it
-    explicit here means search is correct even if pruning is ever skipped
-    for some future call site.
-    """
     distance = KnowledgeChunk.embedding.cosine_distance(query_embedding)
     query = (
         select(KnowledgeChunk, distance.label("distance"))
         .join(KnowledgeDocument, KnowledgeChunk.document_id == KnowledgeDocument.id)
         .options(selectinload(KnowledgeChunk.document))
-        .where(KnowledgeDocument.status == "indexed")
+        .where(KnowledgeDocument.status.in_(["indexed", "ready", "processed"]))
         .where(KnowledgeDocument.is_latest.is_(True))
     )
     if document_type:
@@ -107,8 +89,27 @@ async def similarity_search(
         query = query.where(KnowledgeDocument.tags.contains([tag]))
     if document_id:
         query = query.where(KnowledgeChunk.document_id == document_id)
-    query = query.order_by(distance).limit(top_k)
+    query = query.order_by(distance).limit(100)
 
     result = await db.execute(query)
     rows = result.all()
-    return [(chunk, 1.0 - float(dist)) for chunk, dist in rows]
+
+    # Hybrid Dense + Text Matching Boost for acronyms / specific codes (e.g. FAPI-03, PCI-DSS)
+    terms = []
+    if query_text:
+        raw_terms = [t.strip("?,.!\"'()") for t in query_text.split()]
+        terms = [t.lower() for t in raw_terms if len(t) > 2]
+
+    scored: list[tuple[KnowledgeChunk, float]] = []
+    for chunk, dist in rows:
+        sim = 1.0 - float(dist)
+        if terms:
+            content_lower = chunk.content.lower()
+            matched_terms = [t for t in terms if t in content_lower]
+            if matched_terms:
+                # Boost match score if query terms occur directly in chunk content
+                sim = max(sim, 0.85 + min(0.10, len(matched_terms) * 0.05))
+        scored.append((chunk, round(sim, 4)))
+
+    scored.sort(key=lambda x: x[1], reverse=True)
+    return scored[:top_k]

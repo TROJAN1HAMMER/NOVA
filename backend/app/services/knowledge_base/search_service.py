@@ -50,6 +50,7 @@ async def search(
             top_k=top_k,
             document_type=document_type,
             tag=tag,
+            query_text=query,
         )
     except Exception:
         success = False

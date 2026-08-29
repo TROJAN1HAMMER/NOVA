@@ -58,7 +58,7 @@ export function AppShell() {
       />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar onOpenPalette={openPalette} sidebarExpanded={sidebarExpanded} />
-        <main className="flex-1 p-4 sm:p-6 lg:p-8">
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 pb-20 sm:pb-24 lg:pb-28">
           <Suspense fallback={<FullPageSpinner />}>
             <Outlet />
           </Suspense>

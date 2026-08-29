@@ -38,7 +38,8 @@ from app.schemas.knowledge import (
 )
 from app.services.audit.audit_logger import log_action
 from app.services.knowledge_base import document_manager, search_service
-from app.tasks.knowledge_tasks import process_knowledge_document_task
+import asyncio
+from app.tasks.knowledge_tasks import process_knowledge_document_task, _process
 
 router = APIRouter()
 
@@ -77,7 +78,11 @@ async def upload_document(
     )
     await db.commit()
 
-    process_knowledge_document_task.delay(str(document.id))
+    try:
+        process_knowledge_document_task.delay(str(document.id))
+    except Exception:
+        pass
+    asyncio.create_task(_process(None, str(document.id)))
 
     await log_action(
         user=current_user,
