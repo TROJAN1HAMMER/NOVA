@@ -160,9 +160,27 @@ The **Security Context Graph** (`app/services/security_intelligence/security_con
 
 ## 8. Trust Boundary Modeling
 
-NOVA models software trust boundaries across 4 hierarchical risk zones:
+NOVA models software trust boundaries across four hierarchical risk zones:
 
-$$\text{INTERNET} \implies \text{API\_GATEWAY} \implies \text{APPLICATION\_CORE} \implies \text{DATABASE\_STORE}$$
+$$
+\mathrm{INTERNET}
+\rightarrow
+\mathrm{API\_GATEWAY}
+\rightarrow
+\mathrm{APPLICATION\_CORE}
+\rightarrow
+\mathrm{DATABASE\_STORE}
+$$
+
+```mermaid
+flowchart LR
+    I[INTERNET] --> G[API GATEWAY]
+    G --> A[APPLICATION CORE]
+    A --> D[DATABASE STORE]
+
+    G -. Authorization / Validation .-> A
+    A -. Data Access Control .-> D
+```
 
 When user-controlled input crosses from `INTERNET` to `DATABASE_STORE` without encountering an active authorization or input-validation control, NOVA raises a trust boundary crossing flag.
 
