@@ -65,6 +65,11 @@ backend/data/db/*
 !backend/data/db/.gitkeep
 backend/uploads/*
 !backend/uploads/.gitkeep
+uploads/*
+!uploads/.gitkeep
+data/fastembed_cache/
+data/rerank_cache/
+data/nli_eval_dataset.json
 backend/reports/*
 !backend/reports/.gitkeep
 *.db
@@ -100,3 +105,12 @@ debug.log
 migration_summary.md
 verification_audit.md
 KAVACH_Progress*.pdf
+
+# ------------------------------------------
+# Local Technical Documentation Archive (Laptop Only)
+# ------------------------------------------
+NOVA_*.md
+report/
+!README.md
+!frontend/README.md
+!docs/*.md
