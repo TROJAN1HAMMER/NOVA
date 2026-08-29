@@ -21,6 +21,7 @@ from app.core.metrics import record_rag_operation, record_token_usage
 from app.services.ai.gateway import get_gateway
 from app.services.ai.token_estimator import estimate_tokens
 from app.services.assistant import rerank_manager
+from app.services.search_analytics.calibrator import confidence_calibrator
 from app.services.executive_intelligence import evidence_service
 from app.services.executive_intelligence.evidence_service import ExecutiveEvidenceSnapshot
 from app.services.executive_intelligence.prompts import (
@@ -86,11 +87,17 @@ async def gather_evidence(
             rerank_scores = await asyncio.to_thread(rerank_manager.rerank, question, documents_text)
             ranked = sorted(zip(candidates, rerank_scores), key=lambda pair: pair[1], reverse=True)
             top = ranked[: settings.assistant_top_k]
-            kb_confidence = rerank_manager.normalize_confidence(top[0][1]) if top else 0.0
-            # Unlike Milestone 2/3, falling short of the gate doesn't block an
-            # answer here (the evidence snapshot alone is enough) — it just
-            # means no supplementary citations are included this turn.
+            raw_conf = rerank_manager.normalize_confidence(top[0][1]) if top else 0.0
+            doc_dates = [chunk.document.created_at for (chunk, _), _ in top if hasattr(chunk, "document") and getattr(chunk, "document", None)]
+            freshness_score = confidence_calibrator.compute_freshness(doc_dates)
+            calibrated_score, _ = confidence_calibrator.calibrate(
+                retrieval_score=raw_conf,
+                freshness_score=freshness_score,
+                source_reliability=0.95,
+            )
+            kb_confidence = calibrated_score
             if kb_confidence >= settings.assistant_min_confidence:
+
                 citations = [
                     Citation(
                         document_id=str(chunk.document_id),

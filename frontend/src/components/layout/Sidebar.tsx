@@ -13,6 +13,7 @@ import {
   X,
   Zap,
   Shield,
+  ShieldAlert,
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useAuth } from "../../hooks/useAuth";
@@ -23,7 +24,7 @@ const NAV_ITEMS: { to: string; label: string; icon: typeof Sparkles; routeKey?: 
   { to: "/assistant", label: "Assistant", icon: Sparkles, routeKey: "assistant" },
   { to: "/source-studio", label: "Source Studio", icon: FolderPlus, routeKey: "source-studio" },
   { to: "/knowledge", label: "Knowledge Base", icon: BookOpen, routeKey: "knowledge" },
-  { to: "/scans", label: "Security Scans", icon: Shield, routeKey: "scans" },
+  { to: "/security-intelligence", label: "Security Intelligence", icon: ShieldAlert, routeKey: "security-intelligence" },
   { to: "/graph-explorer", label: "Graph Explorer", icon: Network, routeKey: "graph-explorer" },
   { to: "/memory", label: "Memory", icon: Brain, routeKey: "memory" },
   { to: "/knowledge-evolution", label: "Knowledge Evolution", icon: Dna, routeKey: "knowledge-evolution" },

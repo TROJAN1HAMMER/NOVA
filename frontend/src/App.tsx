@@ -21,8 +21,7 @@ const BenchmarkPage = lazy(() => import("./pages/BenchmarkPage"));
 const ExecutiveDashboardPage = lazy(() => import("./pages/ExecutiveDashboardPage"));
 const MyActivityPage = lazy(() => import("./pages/MyActivityPage"));
 const AdminUsersPage = lazy(() => import("./pages/AdminUsersPage"));
-const ScanPage = lazy(() => import("./pages/ScanPage"));
-const ScanDetailsPage = lazy(() => import("./pages/ScanDetailsPage"));
+const SecurityIntelligencePage = lazy(() => import("./pages/SecurityIntelligencePage"));
 
 function SuspendedRoute({ Component }: { Component: LazyExoticComponent<() => JSX.Element> }) {
   return (
@@ -142,18 +141,10 @@ export default function App() {
           }
         />
         <Route
-          path="scans"
+          path="security-intelligence"
           element={
-            <RequireRole routeKey="scans">
-              <SuspendedRoute Component={ScanPage} />
-            </RequireRole>
-          }
-        />
-        <Route
-          path="scans/:scanId"
-          element={
-            <RequireRole routeKey="scans">
-              <SuspendedRoute Component={ScanDetailsPage} />
+            <RequireRole routeKey="security-intelligence">
+              <SuspendedRoute Component={SecurityIntelligencePage} />
             </RequireRole>
           }
         />

@@ -3,9 +3,11 @@ AEKOF — FAQ Keyword Router & Dual-Loop Self-Healing Gap Service
 """
 
 import uuid
-import structlog
+from collections import Counter
+from datetime import datetime, timedelta, timezone
 from typing import Optional
-from sqlalchemy import select, func
+import structlog
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.faq_rule import FAQRule
@@ -70,6 +72,78 @@ class FAQService:
             await db.commit()
             return True
         return False
+
+    async def cluster_unanswered_queries(self, db: AsyncSession, lookback_hours: int = 24) -> int:
+        """
+        Outer-Loop Self-Healing: Analyzes recent failed/unresolved queries,
+        clusters recurring queries, and auto-synthesizes draft FAQ candidate rules.
+        """
+        since_time = datetime.now(timezone.utc) - timedelta(hours=lookback_hours)
+        query = select(SearchAnalyticsLog.query).where(
+            SearchAnalyticsLog.created_at >= since_time,
+            (SearchAnalyticsLog.result_count == 0) | (SearchAnalyticsLog.fallback_triggered == True)
+        )
+        result = await db.execute(query)
+        failed_queries = [q.strip().lower() for q in result.scalars().all() if q and len(q.strip()) > 3]
+
+        if not failed_queries:
+            logger.info("faq_service.cluster_unanswered_queries.no_failed_queries")
+            return 0
+
+        # Frequency clustering over normalized query patterns
+        counts = Counter(failed_queries)
+        created_candidates = 0
+
+        for q_text, count in counts.most_common(10):
+            if count >= 1:  # Synthesize candidate for recurring or flagged query gaps
+                # Check if rule already exists
+                existing = await db.execute(select(FAQRule).where(FAQRule.keyword.ilike(q_text)))
+                if existing.scalar_one_or_none() is None:
+                    draft_rule = FAQRule(
+                        keyword=q_text.title(),
+                        response=f"Auto-synthesized FAQ axiom for unresolved query cluster: '{q_text}' (Logged {count} failure(s)).",
+                        is_active=False,
+                        is_draft=True,
+                    )
+                    db.add(draft_rule)
+                    created_candidates += 1
+
+        if created_candidates > 0:
+            await db.commit()
+            logger.info("faq_service.cluster_unanswered_queries.created_candidates", count=created_candidates)
+
+        return created_candidates
+
+    async def monitor_and_rollback_faqs(self, db: AsyncSession) -> int:
+        """
+        Closed-Loop Feedback: Monitors active Stage 0 FAQ rules for performance degradation
+        or elevated fallback rates and automatically rolls them back to draft/inactive state.
+        """
+        query = select(FAQRule).where(FAQRule.is_active == True, FAQRule.is_draft == False)
+        result = await db.execute(query)
+        rules = result.scalars().all()
+        rolled_back = 0
+
+        for rule in rules:
+            # Check analytics for degradation signal
+            analytics = await db.execute(
+                select(func.count(SearchAnalyticsLog.id))
+                .where(
+                    SearchAnalyticsLog.query.ilike(f"%{rule.keyword}%"),
+                    SearchAnalyticsLog.fallback_triggered == True,
+                )
+            )
+            fallback_count = analytics.scalar_one() or 0
+            if fallback_count >= 5:  # High fallback rate indicates degraded/stale rule
+                rule.is_active = False
+                rule.is_draft = True
+                rolled_back += 1
+                logger.warning("faq_service.rolled_back_degraded_rule", rule_id=str(rule.id), keyword=rule.keyword)
+
+        if rolled_back > 0:
+            await db.commit()
+
+        return rolled_back
 
     async def get_evolution_metrics(self, db: AsyncSession) -> dict:
         """Computes knowledge evolution & self-healing metrics across search analytics and FAQ rules."""

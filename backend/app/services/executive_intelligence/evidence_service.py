@@ -11,8 +11,6 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.knowledge import KnowledgeChunk, KnowledgeDocument, SearchAnalyticsLog
-from app.models.scan_job import ScanJob
-from app.models.scan_result import ScanResult
 
 
 @dataclass
@@ -66,18 +64,13 @@ async def build_evidence_snapshot(db: AsyncSession) -> ExecutiveEvidenceSnapshot
     log_res = await db.execute(select(func.count(SearchAnalyticsLog.id)))
     total_logs = log_res.scalar_one() or 0
 
-    # 4. Compute Portfolio Average BRS from ScanResult (database-backed)
-    brs_res = await db.execute(
-        select(func.avg(ScanResult.brs_score)).where(ScanResult.brs_score.isnot(None))
-    )
-    avg_brs_raw = brs_res.scalar_one_or_none()
-    portfolio_avg_brs = round(float(avg_brs_raw), 2) if avg_brs_raw is not None else None
+    portfolio_avg_brs = None
 
     # 5. Build Weekly Trend (past 4 weeks) and Week-over-Week delta
     weekly_trend: list[dict[str, Any]] = []
     week_over_week: Optional[dict[str, Any]] = None
 
-    has_data = (total_docs > 0) or (total_chunks > 0) or (total_logs > 0) or (portfolio_avg_brs is not None)
+    has_data = (total_docs > 0) or (total_chunks > 0) or (total_logs > 0)
 
     if has_data:
         # Generate 4-week historical trend points
@@ -98,21 +91,11 @@ async def build_evidence_snapshot(db: AsyncSession) -> ExecutiveEvidenceSnapshot
             log_count = log_count or 0
             zero_res_count = int(zero_res_count or 0)
 
-            scan_brs_res = await db.execute(
-                select(func.avg(ScanResult.brs_score)).join(ScanJob).where(
-                    ScanJob.finished_at >= w_start,
-                    ScanJob.finished_at < w_end,
-                    ScanResult.brs_score.isnot(None),
-                )
-            )
-            week_avg_brs_raw = scan_brs_res.scalar_one_or_none()
-            week_avg_brs = round(float(week_avg_brs_raw), 2) if week_avg_brs_raw is not None else None
-
             weekly_trend.append(
                 {
                     "week_start": w_start.strftime("%Y-%m-%d"),
                     "scan_count": log_count,
-                    "average_brs": week_avg_brs,
+                    "average_brs": None,
                     "critical_high_findings": zero_res_count,
                 }
             )
@@ -144,32 +127,13 @@ async def build_evidence_snapshot(db: AsyncSession) -> ExecutiveEvidenceSnapshot
         lw_scans = lw_scans or 0
         lw_findings = int(lw_findings or 0)
 
-        tw_brs_res = await db.execute(
-            select(func.avg(ScanResult.brs_score)).join(ScanJob).where(
-                ScanJob.finished_at >= this_week_start,
-                ScanResult.brs_score.isnot(None),
-            )
-        )
-        tw_brs_raw = tw_brs_res.scalar_one_or_none()
-        tw_avg_brs = round(float(tw_brs_raw), 2) if tw_brs_raw is not None else None
-
-        lw_brs_res = await db.execute(
-            select(func.avg(ScanResult.brs_score)).join(ScanJob).where(
-                ScanJob.finished_at >= last_week_start,
-                ScanJob.finished_at < this_week_start,
-                ScanResult.brs_score.isnot(None),
-            )
-        )
-        lw_brs_raw = lw_brs_res.scalar_one_or_none()
-        lw_avg_brs = round(float(lw_brs_raw), 2) if lw_brs_raw is not None else None
-
         week_over_week = {
             "scans_this_week": tw_scans,
             "scans_last_week": lw_scans,
             "findings_this_week": tw_findings,
             "findings_last_week": lw_findings,
-            "average_brs_this_week": tw_avg_brs,
-            "average_brs_last_week": lw_avg_brs,
+            "average_brs_this_week": None,
+            "average_brs_last_week": None,
         }
 
     return ExecutiveEvidenceSnapshot(

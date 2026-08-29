@@ -73,4 +73,9 @@ def enrich_finding(
     enriched["brs"] = finding_score.brs
     enriched["brs_risk_level"] = _calculate_risk_level(finding_score.brs)
 
+    # 5. Cross-scanner confidence calculation: C_finding = 1 - PROD(1 - c_i)
+    from app.services.assistant.evidence_fusion import evidence_fusion_engine
+    sources = enriched.get("sources") or [enriched.get("source", "scanner")]
+    enriched["scanner_confidence"] = evidence_fusion_engine.calculate_cross_scanner_confidence(sources)
+
     return enriched

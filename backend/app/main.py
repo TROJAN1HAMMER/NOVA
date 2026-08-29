@@ -112,10 +112,8 @@ app.mount("/static/reports", StaticFiles(directory=settings.reports_dir), name="
 # ── Routers ───────────────────────────────────────────────────────────────────
 
 from app.api.v1.router import api_router
-from app.api.v1.endpoints.scan import websocket_scan_progress
 
 app.include_router(api_router, prefix="/api/v1")
-app.websocket("/ws/scan/{scan_job_id}")(websocket_scan_progress)
 
 
 # ── Health Check ──────────────────────────────────────────────────────────────

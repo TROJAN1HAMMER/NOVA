@@ -11,9 +11,6 @@ from app.models.chat_message import ChatMessage
 from app.models.faq_rule import FAQRule
 from app.models.system_setting import SystemSetting
 from app.models.repository import Repository
-from app.models.scan_job import ScanJob
-from app.models.scan_result import ScanResult
-from app.models.finding import Finding
 from app.models.risk_config import BusinessModule, RiskFactorWeight
 from app.models.knowledge import (
     KnowledgeDocument,
@@ -22,6 +19,13 @@ from app.models.knowledge import (
     KnowledgeRelation,
     SearchAnalyticsLog,
     Feedback,
+)
+from app.models.security_intelligence import (
+    SecurityIntelAsset,
+    SecurityIntelObservation,
+    SecurityIntelControl,
+    SecurityIntelRiskScenario,
+    SecurityIntelAssessment,
 )
 
 __all__ = [
@@ -33,9 +37,6 @@ __all__ = [
     "FAQRule",
     "SystemSetting",
     "Repository",
-    "ScanJob",
-    "ScanResult",
-    "Finding",
     "BusinessModule",
     "RiskFactorWeight",
     "KnowledgeDocument",
@@ -44,4 +45,9 @@ __all__ = [
     "KnowledgeRelation",
     "SearchAnalyticsLog",
     "Feedback",
+    "SecurityIntelAsset",
+    "SecurityIntelObservation",
+    "SecurityIntelControl",
+    "SecurityIntelRiskScenario",
+    "SecurityIntelAssessment",
 ]

@@ -55,30 +55,32 @@ def nightly_gap_cluster_analysis_task() -> None:
 
 
 async def _run_nightly_gap_cluster_analysis() -> None:
+    from app.services.faq_service import faq_service
     async with AsyncSessionLocal() as db:
         logger.info("gap_analysis.starting")
-        # TODO: call faq_service.cluster_unanswered_queries(db, lookback_hours=24)
-        logger.info("gap_analysis.complete")
+        created_count = await faq_service.cluster_unanswered_queries(db, lookback_hours=24)
+        logger.info("gap_analysis.complete", created_candidates=created_count)
 
 
-# ── Nightly FAQ Synthesis ─────────────────────────────────────────────────────
+# ── Nightly FAQ Synthesis & Degradation Rollback ──────────────────────────────
 
 
 @celery_app.task(name="NOVA.nightly_faq_synthesis")
 def nightly_faq_synthesis_task() -> None:
     """
-    Runs at 02:30 UTC. For gap clusters that have accumulated enough query
-    frequency and have been approved by an admin, generates a synthesized FAQ
-    entry and indexes it into the vector store.
+    Runs at 02:30 UTC. Monitors active Stage 0 FAQ rules for performance degradation
+    and automatically rolls them back if fallback rates spike.
     """
     asyncio.run(_run_nightly_faq_synthesis())
 
 
 async def _run_nightly_faq_synthesis() -> None:
+    from app.services.faq_service import faq_service
     async with AsyncSessionLocal() as db:
         logger.info("faq_synthesis.starting")
-        # TODO: call faq_service.synthesize_approved_gaps(db)
-        logger.info("faq_synthesis.complete")
+        rolled_back_count = await faq_service.monitor_and_rollback_faqs(db)
+        logger.info("faq_synthesis.complete", rolled_back_count=rolled_back_count)
+
 
 
 # ── Archive Old Knowledge Jobs ────────────────────────────────────────────────

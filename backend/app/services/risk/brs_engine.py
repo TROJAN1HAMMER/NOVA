@@ -17,8 +17,18 @@ import math
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from app.schemas.finding import RawFinding
 from app.services.compliance.compliance_mapper import ComplianceMappingData
+
+
+@dataclass
+class RawFinding:
+    title: str = ""
+    severity: str = "MEDIUM"
+    cvss: float = 5.0
+    cwe_id: Optional[str] = None
+    cve: Optional[str] = None
+    file_path: Optional[str] = None
+    description: Optional[str] = None
 
 
 @dataclass

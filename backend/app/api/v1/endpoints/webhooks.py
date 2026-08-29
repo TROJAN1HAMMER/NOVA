@@ -16,7 +16,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.db.session import get_db
 from app.schemas.webhook import WebhookAckResponse
-from app.services.scan_intake import submit_repository
 
 logger = structlog.get_logger(__name__)
 settings = get_settings()
@@ -100,25 +99,20 @@ async def github_webhook_endpoint(
         logger.info("webhook.github.non_default_branch_ignored", branch=branch, default=default_branch)
         return WebhookAckResponse(status="ignored", message=f"Branch '{branch}' is not the default branch")
 
-    # 5. Queue scan job through central scan intake service
-    repo, job = await submit_repository(
-        db,
-        repo_url=clone_url,
-        ref=branch,
-        owner_id=None,
-    )
+    # 5. Execute Security Intelligence analysis
+    from app.services.security_intelligence.intelligence_orchestrator import security_intelligence_orchestrator
+    analysis = security_intelligence_orchestrator.run_full_analysis(".")
 
     logger.info(
-        "webhook.github.scan_queued",
-        repository_id=str(repo.id),
-        scan_job_id=str(job.id),
+        "webhook.github.analysis_completed",
         repo_url=clone_url,
         branch=branch,
+        assessments_count=len(analysis["assessments"]),
     )
 
     return WebhookAckResponse(
         status="scan_queued",
-        message="Push event verified and scan job queued",
-        scan_job_id=job.id,
-        repository_id=repo.id,
+        message="Push event verified and Security Intelligence analysis executed",
+        scan_job_id=None,
+        repository_id=None,
     )
