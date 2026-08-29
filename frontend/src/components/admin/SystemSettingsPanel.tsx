@@ -1,15 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
-  Check,
-  CheckCircle2,
-  Cpu,
-  Layers,
   RotateCcw,
   Save,
   Sliders,
-  Sparkles,
-  ToggleLeft,
 } from "lucide-react";
 import { Card, CardContent, CardHeader } from "../ui/Card";
 import { Button } from "../ui/Button";
@@ -46,7 +40,7 @@ export function SystemSettingsPanel() {
   // Sync server data into formState when loaded
   useEffect(() => {
     if (data?.settings) {
-      setFormState((prev) => ({
+      setFormState(() => ({
         ...DEFAULT_FORM_STATE,
         ...data.settings,
       }));
@@ -90,7 +84,7 @@ export function SystemSettingsPanel() {
   const handleReset = () => {
     resetSettings.mutate(undefined, {
       onSuccess: (res) => {
-        setFormState((prev) => ({
+        setFormState(() => ({
           ...DEFAULT_FORM_STATE,
           ...res.settings,
         }));

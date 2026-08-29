@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
 import { EmptyState } from "../components/ui/EmptyState";
 import { useGraphSnapshot } from "../hooks/useKnowledge";
-import type { GraphNode, GraphRelation } from "../types/api";
+import type { GraphNode } from "../types/api";
 
 export default function GraphExplorerPage() {
   const { data: graphData, isLoading } = useGraphSnapshot();

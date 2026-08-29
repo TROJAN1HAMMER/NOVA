@@ -111,3 +111,27 @@ class SecurityIntelAssessment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     commit_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
 
     asset: Mapped["SecurityIntelAsset"] = relationship("SecurityIntelAsset", back_populates="assessments")
+
+
+class SecurityIntelPostureSnapshot(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "security_intel_posture_snapshots"
+
+    analysis_run_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    target_scope: Mapped[str] = mapped_column(String(512), nullable=False, default=".", index=True)
+    commit_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+
+    posture_score: Mapped[float] = mapped_column(Float, nullable=False)
+    posture_rating: Mapped[str] = mapped_column(String(32), nullable=False)  # STRONG, MODERATE, NEEDS_ATTENTION
+    control_coverage_pct: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+
+    total_assets_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    unresolved_risks_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    critical_risks_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    high_risks_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    medium_risks_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    low_risks_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    verified_fixed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    delta_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=0.0)
+    trend_direction: Mapped[str] = mapped_column(String(32), nullable=False, default="UNCHANGED")  # IMPROVED, DEGRADED, UNCHANGED, FIRST_RUN
+    risk_evolution_summary: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)

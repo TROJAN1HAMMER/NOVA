@@ -54,14 +54,7 @@ const STATUS_ICON: Record<string, React.ReactNode> = {
   cancelled: <XCircle className="size-3.5 text-amber-400" />,
 };
 
-function ConnectorBadge({ type }: { type: string }) {
-  const label = type.toUpperCase();
-  return (
-    <Badge tone="neutral" className="font-mono text-[10px]">
-      {label}
-    </Badge>
-  );
-}
+
 
 export default function MyActivityPage() {
   const { data, isLoading } = useMyActivity();

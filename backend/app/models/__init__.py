@@ -26,6 +26,7 @@ from app.models.security_intelligence import (
     SecurityIntelControl,
     SecurityIntelRiskScenario,
     SecurityIntelAssessment,
+    SecurityIntelPostureSnapshot,
 )
 
 __all__ = [
@@ -50,4 +51,5 @@ __all__ = [
     "SecurityIntelControl",
     "SecurityIntelRiskScenario",
     "SecurityIntelAssessment",
+    "SecurityIntelPostureSnapshot",
 ]

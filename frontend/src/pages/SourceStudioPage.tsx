@@ -11,7 +11,6 @@ import {
   RefreshCw,
   Trash2,
   Search,
-  Plus,
   Layers,
   Network,
   Cpu,

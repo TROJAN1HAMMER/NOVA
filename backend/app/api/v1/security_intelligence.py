@@ -73,6 +73,30 @@ def get_security_posture():
     return {"posture": analysis["posture"]}
 
 
+@router.get("/posture/history", response_model=Dict[str, Any])
+def get_security_posture_history(target_scope: str = Query(default=".", description="Target repository or system scope"), limit: int = Query(default=30, ge=1, le=100)):
+    """Returns historical security posture snapshots and trend delta analysis for requested scope."""
+    history = security_intelligence_orchestrator.get_posture_history(target_scope, limit=limit)
+    if not history:
+        # Guarantee at least initial snapshot
+        analysis = security_intelligence_orchestrator.run_full_analysis(target_scope)
+        history = [analysis["snapshot"]]
+    latest = history[-1]
+    return {
+        "status": "success",
+        "target_scope": target_scope,
+        "current_posture": {
+            "posture_score": latest["posture_score"],
+            "posture_rating": latest["posture_rating"],
+            "delta_score": latest.get("delta_score"),
+            "trend_direction": latest["trend_direction"],
+            "unresolved_risks_count": latest["unresolved_risks_count"],
+            "risk_evolution_summary": latest.get("risk_evolution_summary"),
+        },
+        "history": history,
+    }
+
+
 @router.get("/paths/{id}", response_model=Dict[str, Any])
 def get_attack_path_by_id(id: str):
     """Returns the complete attack path and trust boundary crossings for a scenario or assessment."""

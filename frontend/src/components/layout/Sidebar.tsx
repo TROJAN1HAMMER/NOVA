@@ -12,7 +12,6 @@ import {
   UserCog,
   X,
   Zap,
-  Shield,
   ShieldAlert,
 } from "lucide-react";
 import { cn } from "../../lib/utils";

@@ -1,34 +1,35 @@
 import { useState, useEffect } from "react";
-import { ShieldAlert, ShieldCheck, Cpu, Layers, GitBranch, ArrowRight, CheckCircle2, AlertTriangle, Play, RefreshCw } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../components/ui/Card";
+import { ShieldAlert, ShieldCheck, Cpu, Layers, GitBranch, ArrowRight, CheckCircle2, Play, RefreshCw } from "lucide-react";
+import { Card, CardContent } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 
 interface SecurityAsset {
-  asset_name: str;
-  asset_type: str;
-  criticality: str;
-  owner: str;
-  location: str;
+  asset_name: string;
+  asset_type: string;
+  criticality: string;
+  owner: string;
+  location: string;
 }
 
 interface SecurityAssessment {
-  id: str;
-  asset_name: str;
-  risk_type: str;
-  severity: str;
+  id: string;
+  asset_name: string;
+  risk_type: string;
+  severity: string;
   confidence: number;
-  affected_scope: str;
-  reasoning: str;
-  remediation: str;
-  status: str;
-  attack_path: str[];
-  controls_evaluated: { control: str; state: str }[];
+  affected_scope: string;
+  reasoning: string;
+  remediation: string;
+  status: string;
+  attack_path: string[];
+  controls_evaluated: { control: string; state: string }[];
 }
 
 interface PostureData {
   posture_score: number;
-  posture_rating: str;
+  posture_rating: string;
+  delta_score?: number | null;
   total_assets: number;
   critical_assets: number;
   control_coverage: {
@@ -37,7 +38,7 @@ interface PostureData {
     coverage_percentage: number;
   };
   unresolved_risks_count: number;
-  security_trend: str;
+  security_trend: string;
 }
 
 export default function SecurityIntelligencePage() {
@@ -136,6 +137,7 @@ export default function SecurityIntelligencePage() {
           <p className="text-sm text-muted-foreground">
             Asset-centric security context graph, trust boundary data flow, and risk scenario reasoning.
           </p>
+          {loading && <p className="text-xs text-primary animate-pulse">Loading posture data...</p>}
         </div>
         <Button onClick={handleRunAnalysis} disabled={analyzing} className="gap-2">
           {analyzing ? <RefreshCw className="size-4 animate-spin" /> : <Play className="size-4" />}
@@ -146,50 +148,47 @@ export default function SecurityIntelligencePage() {
       {/* Posture Highlights */}
       {posture && (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card className="bg-card/60 backdrop-blur-md">
-            <CardHeader className="pb-2">
-              <CardDescription>Security Posture Score</CardDescription>
-              <CardTitle className="text-3xl font-bold text-primary flex items-center gap-2">
-                {posture.posture_score} / 100
-                <Badge variant={posture.posture_rating === "STRONG" ? "default" : "destructive"}>
-                  {posture.posture_rating}
+          <Card className="bg-card/60 backdrop-blur-md p-5">
+            <div className="text-xs text-muted-foreground mb-1">Security Posture Score</div>
+            <div className="text-3xl font-bold text-primary flex items-center gap-2">
+              {posture.posture_score} / 100
+              <Badge tone={posture.posture_rating === "STRONG" ? "success" : "danger"}>
+                {posture.posture_rating}
+              </Badge>
+              {posture.delta_score != null && (
+                <Badge tone={posture.delta_score >= 0 ? "success" : "danger"} className="text-xs">
+                  {posture.delta_score >= 0 ? `↑ +${posture.delta_score}%` : `↓ ${posture.delta_score}%`} {posture.security_trend}
                 </Badge>
-              </CardTitle>
-            </CardHeader>
+              )}
+            </div>
           </Card>
 
-          <Card className="bg-card/60 backdrop-blur-md">
-            <CardHeader className="pb-2">
-              <CardDescription>Discovered Assets</CardDescription>
-              <CardTitle className="text-3xl font-bold text-foreground">
-                {posture.total_assets}
-                <span className="text-xs text-muted-foreground font-normal ml-2">
-                  ({posture.critical_assets} Critical)
-                </span>
-              </CardTitle>
-            </CardHeader>
+          <Card className="bg-card/60 backdrop-blur-md p-5">
+            <div className="text-xs text-muted-foreground mb-1">Discovered Assets</div>
+            <div className="text-3xl font-bold text-foreground">
+              {posture.total_assets}
+              <span className="text-xs text-muted-foreground font-normal ml-2">
+                ({posture.critical_assets} Critical)
+              </span>
+            </div>
           </Card>
 
-          <Card className="bg-card/60 backdrop-blur-md">
-            <CardHeader className="pb-2">
-              <CardDescription>Control Coverage</CardDescription>
-              <CardTitle className="text-3xl font-bold text-emerald-500">
-                {posture.control_coverage.coverage_percentage}%
-                <span className="text-xs text-muted-foreground font-normal ml-2">
-                  ({posture.control_coverage.present_controls} Present)
-                </span>
-              </CardTitle>
-            </CardHeader>
+          <Card className="bg-card/60 backdrop-blur-md p-5">
+            <div className="text-xs text-muted-foreground mb-1">Control Coverage</div>
+            <div className="text-3xl font-bold text-emerald-500">
+              {posture.control_coverage.coverage_percentage}%
+              <span className="text-xs text-muted-foreground font-normal ml-2">
+                ({posture.control_coverage.present_controls} Present)
+              </span>
+            </div>
           </Card>
 
-          <Card className="bg-card/60 backdrop-blur-md">
-            <CardHeader className="pb-2">
-              <CardDescription>Unresolved Risks</CardDescription>
-              <CardTitle className="text-3xl font-bold text-amber-500">
-                {posture.unresolved_risks_count}
-                <span className="text-xs text-muted-foreground font-normal ml-2">Open Scenarios</span>
-              </CardTitle>
-            </CardHeader>
+          <Card className="bg-card/60 backdrop-blur-md p-5">
+            <div className="text-xs text-muted-foreground mb-1">Unresolved Risks</div>
+            <div className="text-3xl font-bold text-amber-500">
+              {posture.unresolved_risks_count}
+              <span className="text-xs text-muted-foreground font-normal ml-2">Open Scenarios</span>
+            </div>
           </Card>
         </div>
       )}
@@ -199,19 +198,17 @@ export default function SecurityIntelligencePage() {
         {/* Left Column: Asset Registry & Risk Assessments */}
         <div className="space-y-6 lg:col-span-1">
           <Card>
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <Cpu className="size-4 text-primary" /> Discovered Assets ({assets.length})
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
+            <div className="p-5 pb-0 flex items-center gap-2 font-semibold text-base">
+              <Cpu className="size-4 text-primary" /> Discovered Assets ({assets.length})
+            </div>
+            <CardContent className="space-y-3 pt-4">
               {assets.map((asset, i) => (
                 <div key={i} className="p-3 border rounded-lg bg-muted/30 flex items-center justify-between">
                   <div>
                     <div className="font-semibold text-sm">{asset.asset_name}</div>
                     <div className="text-xs text-muted-foreground">{asset.location}</div>
                   </div>
-                  <Badge variant={asset.criticality === "CRITICAL" ? "destructive" : "secondary"}>
+                  <Badge tone={asset.criticality === "CRITICAL" ? "danger" : "neutral"}>
                     {asset.criticality}
                   </Badge>
                 </div>
@@ -220,12 +217,10 @@ export default function SecurityIntelligencePage() {
           </Card>
 
           <Card>
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <Layers className="size-4 text-primary" /> Security Assessments ({assessments.length})
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
+            <div className="p-5 pb-0 flex items-center gap-2 font-semibold text-base">
+              <Layers className="size-4 text-primary" /> Security Assessments ({assessments.length})
+            </div>
+            <CardContent className="space-y-2 pt-4">
               {assessments.map((ass, i) => (
                 <div
                   key={i}
@@ -236,7 +231,7 @@ export default function SecurityIntelligencePage() {
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-medium text-xs text-foreground">{ass.risk_type}</span>
-                    <Badge variant={ass.severity === "HIGH" ? "destructive" : "outline"}>{ass.severity}</Badge>
+                    <Badge tone={ass.severity === "HIGH" ? "danger" : "neutral"}>{ass.severity}</Badge>
                   </div>
                   <div className="text-xs text-muted-foreground mt-1 truncate">{ass.affected_scope}</div>
                 </div>
@@ -249,28 +244,26 @@ export default function SecurityIntelligencePage() {
         <div className="lg:col-span-2 space-y-6">
           {selectedAssessment ? (
             <Card className="border-primary/30">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Badge variant="outline" className="mb-2">
-                      Assessment Detail
-                    </Badge>
-                    <CardTitle className="text-xl font-bold">{selectedAssessment.risk_type}</CardTitle>
-                    <CardDescription>{selectedAssessment.affected_scope}</CardDescription>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleVerifyRemediation(selectedAssessment)}
-                    disabled={remediating}
-                    className="gap-2"
-                  >
-                    <ShieldCheck className="size-4 text-emerald-500" />
-                    {remediating ? "Verifying..." : "Verify Remediation"}
-                  </Button>
+              <div className="p-5 pb-0 flex items-center justify-between">
+                <div>
+                  <Badge tone="neutral" className="mb-2">
+                    Assessment Detail
+                  </Badge>
+                  <div className="text-xl font-bold">{selectedAssessment.risk_type}</div>
+                  <div className="text-xs text-muted-foreground">{selectedAssessment.affected_scope}</div>
                 </div>
-              </CardHeader>
-              <CardContent className="space-y-6">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleVerifyRemediation(selectedAssessment)}
+                  disabled={remediating}
+                  className="gap-2"
+                >
+                  <ShieldCheck className="size-4 text-emerald-500" />
+                  {remediating ? "Verifying..." : "Verify Remediation"}
+                </Button>
+              </div>
+              <CardContent className="space-y-6 pt-4">
                 {/* Verification result alert */}
                 {verificationResult && (
                   <div className={`p-3 rounded-lg text-sm flex items-center gap-2 ${
@@ -311,7 +304,7 @@ export default function SecurityIntelligencePage() {
                   </h4>
                   <div className="flex flex-wrap gap-2">
                     {selectedAssessment.controls_evaluated?.map((c, i) => (
-                      <Badge key={i} variant={c.state === "PRESENT" ? "default" : "destructive"}>
+                      <Badge key={i} tone={c.state === "PRESENT" ? "success" : "danger"}>
                         {c.control}: {c.state}
                       </Badge>
                     ))}
