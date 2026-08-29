@@ -15,18 +15,6 @@ Traditional Large Language Model (LLM) Retrieval-Augmented Generation (RAG) arch
 
 NOVA resolves this fundamental challenge by introducing a **dual-track evidence fusion engine**, **pairwise Natural Language Inference (NLI) consensus matrix**, **8-dimensional Platt trust calibrator**, and a **two-stage hard safety policy gate**. NOVA normalizes both structured AST security intelligence and unstructured natural language into unified evidence items, evaluates pairwise directional relationships between evidence, calculates calibrated trust probabilities, enforces hard safety overrides when evidence conflicts, and provides complete explainability for every decision.
 
-```
-+-----------------------------------------------------------------------------------+
-|                                  NOVA PLATFORM                                    |
-|                                                                                   |
-|  [ Enterprise Knowledge ] ──┐                                                     |
-|                             ├─► [ Unified Evidence ] ─► [ Pairwise NLI Matrix ]   |
-|  [ Security Intelligence ] ─┘                                     │               |
-|                                                                   ▼               |
-|  [ Explainable Response ] ◄─ [ Two-Stage Safety Gate ] ◄─ [ 8D Trust Calibrator ] |
-+-----------------------------------------------------------------------------------+
-```
-
 ---
 
 ## 2. Core Design Philosophy
@@ -41,52 +29,68 @@ NOVA is built around five fundamental engineering principles:
 
 ---
 
-## 3. Complete System Architecture
+## 3. System Architecture
 
+```mermaid
+flowchart TD
+    subgraph TrackA["Track A: Enterprise Knowledge Track"]
+        KB[pgvector Knowledge Base] --> Chunking[Heading-Aware Chunking]
+    end
+
+    subgraph TrackB["Track B: Security Intelligence Subsystem"]
+        Repo[Enterprise Repository / Codebase] --> Discovery[1. Asset Discovery]
+        Discovery --> AST[2. AST Security Observations]
+        AST --> Graph[3. Security Context Graph]
+        Graph --> Controls[4. Security Control Analysis]
+        Controls --> Scenarios[5. Risk Scenario Engine]
+        Scenarios --> Verifier[6. Scenario Verification Gate]
+        Verifier --> Store[7. Security Assessment Store]
+        Store --> PostureEngine[8. Temporal Posture Snapshot]
+        Store --> EvidenceProvider[9. Security Evidence Provider]
+    end
+
+    Chunking --> Fusion[Dual-Track Evidence Fusion]
+    EvidenceProvider --> Fusion
+
+    subgraph CoreRAG["Evidence Reasoning & Trust Calibration Engine"]
+        Fusion --> Reranker[Cross-Encoder Reranking]
+        Reranker --> PairwiseNLI[Pairwise NLI Matrix N x N]
+        PairwiseNLI --> Consensus[Consensus Engine]
+        Consensus --> Calibrator[8D Platt Trust Calibrator]
+    end
+
+    subgraph PolicyGate["Two-Stage Safety Policy Gate"]
+        Calibrator --> Decision{Hard Safety Check}
+        Decision -- "High Trust & No Conflict" --> Generate[GENERATE]
+        Decision -- "Low Trust (Score < 0.70)" --> Fallback[FALLBACK_WEB]
+        Decision -- "Contradiction (Agreement <= 0.20)" --> Abstain[ABSTAIN]
+    end
+
+    Generate --> SSEStream[Assistant SSE Response Stream]
+    Fallback --> SSEStream
+    Abstain --> SSEStream
+
+    subgraph Applications["Enterprise Application Layer"]
+        SSEStream --> AssistantUI[Assistant UI Chat]
+        PostureEngine --> ExecutiveRadar[Executive Radar Dashboard]
+        AssistantUI --> Provenance[SafetyGateBanner & Contradiction Inspector]
+    end
 ```
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                                 DUAL-TRACK RETRIEVAL                                   │
-├───────────────────────────────────────────┬────────────────────────────────────────────┤
-│ TRACK A: Enterprise Knowledge Base        │ TRACK B: Security Intelligence Subsystem   │
-│ (pgvector HNSW -> Heading Chunking)       │ (Asset Discovery -> Context Graph -> AST)  │
-└─────────────────────────────────────┬─────┴────────────────────────────────────────────┘
-                                      │
-                                      ▼
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                             UNIFIED EVIDENCE FUSION                                    │
-│                 (Normalizes chunks & AST assessments to UnifiedEvidenceItem)           │
-└─────────────────────────────────────┬──────────────────────────────────────────────────┘
-                                      │
-                                      ▼
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                            CROSS-ENCODER RERANKING                                     │
-│                 (ms-marco-MiniLM-L-6-v2 Rerank -> Top K Selection)                     │
-└─────────────────────────────────────┬──────────────────────────────────────────────────┘
-                                      │
-                                      ▼
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                        PAIRWISE NLI CONSENSUS MATRIX (N x N)                           │
-│           (NLI Cross-Encoder + Security Property Conflict Matrix -> C_agreement)        │
-└─────────────────────────────────────┬──────────────────────────────────────────────────┘
-                                      │
-                                      ▼
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                           8D PLATT TRUST CALIBRATION                                   │
-│           (Computes Logit -> P(Correct | C) = 1 / (1 + exp(-Logit)))                   │
-└─────────────────────────────────────┬──────────────────────────────────────────────────┘
-                                      │
-                                      ▼
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                         TWO-STAGE SAFETY POLICY GATE                                   │
-│    (C_agreement <= 0.20 OR contradiction_count > 0 ? FALLBACK_WEB/ABSTAIN : GENERATE)  │
-└─────────────────────────────────────┬──────────────────────────────────────────────────┘
-                                      │
-                                      ▼
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                       EXPLAINABLE ASSISTANT SSE STREAM                                 │
-│         (Exposes SafetyGateBanner, Evidence A vs B, Provenance, & CWE/CVE)            │
-└────────────────────────────────────────────────────────────────────────────────────────┘
-```
+
+### Quick Architecture Summary
+
+| Layer | Primary Responsibility | Key Source Component |
+| :--- | :--- | :--- |
+| **Enterprise Knowledge Track** | Document ingestion, chunking, and HNSW vector retrieval | `app/services/knowledge/` |
+| **Security Intelligence Subsystem** | Asset-aware structural security analysis, AST facts, and context graph | `app/services/security_intelligence/` |
+| **Evidence Fusion** | Normalizes heterogeneous chunks and security assessments into `UnifiedEvidenceItem` | `app/services/search_analytics/evidence_fusion.py` |
+| **Pairwise NLI Reasoning** | Evaluates directional relationships (`SUPPORTS`, `CONTRADICTS`, `RELATED`, `UNRELATED`) | `app/services/ai/nli_engine.py` |
+| **Consensus Engine** | Quantifies evidence agreement density ($C_{\text{agreement}}$) | `app/services/ai/consensus_engine.py` |
+| **8D Trust Calibration** | Converts 8 evidence features into Platt-scaled calibrated trust probability | `app/services/search_analytics/calibrator.py` |
+| **Two-Stage Safety Policy Gate** | Subordinates statistical trust to discrete hard refusal policy rules | `app/services/assistant/assistant_service.py` |
+| **Temporal Security Posture** | Persists historical snapshots ($S_t$) and calculates trajectory deltas ($\Delta S$) | `app/services/security_intelligence/posture_trend_engine.py` |
+| **Assistant SSE Stream** | Streams grounded text answers alongside `SafetyGateBanner` explainability | `app/services/assistant/assistant_service.py` |
+| **Executive Radar** | Displays time-series risk evolution, knowledge health, and posture trends | `app/services/analytics/executive_intelligence.py` |
 
 ---
 
@@ -94,38 +98,18 @@ NOVA is built around five fundamental engineering principles:
 
 NOVA operates a completely independent, non-scanner Security Intelligence subsystem organized into a 10-stage execution pipeline:
 
-```
-[ Enterprise Repository ]
-          │
-          ▼
-1. Asset Discovery (API, Service, Database, Endpoint, Module)
-          │
-          ▼
-2. Observation Collector (AST facts, route decorators, input parameters)
-          │
-          ▼
-3. Security Context Graph (Nodes, edges, trust boundary crossings)
-          │
-          ▼
-4. Trust Boundary Modeling (INTERNET -> API -> APPLICATION -> DATABASE)
-          │
-          ▼
-5. Security Control Analysis (PRESENT, ABSENT, PARTIAL, BYPASSED)
-          │
-          ▼
-6. Risk Scenario Engine (Infers threat paths & potential impact)
-          │
-          ▼
-7. Scenario Verification Gate (CANDIDATE -> SUPPORTED -> VERIFIED)
-          │
-          ▼
-8. Security Assessment Store (Persists structured assessment entities)
-          │
-          ▼
-9. Remediation Verifier (AST re-evaluation -> VERIFIED_FIXED)
-          │
-          ▼
-10. Security Evidence Provider (Exports items to Dual-Track RAG)
+```mermaid
+flowchart LR
+    Repo[Repository] --> Discovery[1. Asset Discovery]
+    Discovery --> AST[2. AST Observations]
+    AST --> Graph[3. Context Graph]
+    Graph --> Boundary[4. Trust Boundary Analysis]
+    Boundary --> Controls[5. Control Evaluation]
+    Controls --> Scenarios[6. Risk Scenario Inference]
+    Scenarios --> Verifier[7. Scenario Verification]
+    Verifier --> Assessments[8. Security Assessment Store]
+    Assessments --> Remediation[9. Remediation Verifier]
+    Remediation --> EvidenceProvider[10. Security Evidence Provider]
 ```
 
 > [!NOTE]
@@ -174,7 +158,17 @@ The **Security Context Graph** (`app/services/security_intelligence/security_con
 
 ---
 
-## 8. Security Control Analysis
+## 8. Trust Boundary Modeling
+
+NOVA models software trust boundaries across 4 hierarchical risk zones:
+
+$$\text{INTERNET} \implies \text{API\_GATEWAY} \implies \text{APPLICATION\_CORE} \implies \text{DATABASE\_STORE}$$
+
+When user-controlled input crosses from `INTERNET` to `DATABASE_STORE` without encountering an active authorization or input-validation control, NOVA raises a trust boundary crossing flag.
+
+---
+
+## 9. Security Control Analysis
 
 The **Control Analyzer** (`app/services/security_intelligence/control_analyzer.py`) evaluates control implementation states:
 
@@ -187,17 +181,17 @@ The **Control Analyzer** (`app/services/security_intelligence/control_analyzer.p
 
 ---
 
-## 9. Risk Scenario Engine
+## 10. Risk Scenario Engine
 
 The **Risk Scenario Engine** (`app/services/security_intelligence/risk_scenario_engine.py`) synthesizes observations, controls, and trust boundary crossings to infer threat paths:
 
-$$\text{Exposure Signal} + \text{Asset Criticality} + \text{Trust Boundary} + \text{Control Deficit} \implies \text{Risk Scenario}$$
+$$\text{Exposure Signal} + \text{Asset Criticality} + \text{Trust Boundary Crossing} + \text{Control Deficit} \implies \text{Risk Scenario}$$
 
 Supported scenario types include `PRIVILEGE_ESCALATION_RISK`, `UNPROTECTED_ENDPOINT_RISK`, `SQL_INJECTION_RISK`, `DATA_LEAK_RISK`, and `SECRET_EXPOSURE_RISK`.
 
 ---
 
-## 10. Scenario Verification Engine
+## 11. Scenario Verification Engine
 
 Before a risk scenario is persisted as an authoritative assessment, it passes through the **Verification Gate** (`app/services/security_intelligence/scenario_verifier.py`):
 
@@ -209,7 +203,7 @@ Verification evaluates control evidence confidence ($>0.85$) and confirms affect
 
 ---
 
-## 11. Remediation Verification
+## 12. Remediation Verification
 
 The **Remediation Verifier** (`app/services/security_intelligence/remediation_verifier.py`) re-evaluates AST code snippets after code modifications:
 
@@ -219,13 +213,13 @@ The **Remediation Verifier** (`app/services/security_intelligence/remediation_ve
 
 ---
 
-## 12. Temporal Security Posture & Trend Engine
+## 13. Temporal Security Posture & Trend Engine
 
 NOVA tracks security posture changes over time via `PostureTrendEngine` (`app/services/security_intelligence/posture_trend_engine.py`):
 
-### Trajectory Score Delta Formula
+### Trajectory Score Delta Equation
 
-$$\Delta S = S_t - S_{t-1}$$
+$$ \Delta S = S_t - S_{t-1} $$
 
 ### Trend Classifications
 
@@ -234,7 +228,7 @@ $$\Delta S = S_t - S_{t-1}$$
 - **`UNCHANGED`**: $-1.0\% \le \Delta S \le +1.0\%$
 - **`FIRST_RUN`**: Initial snapshot baseline.
 
-### Risk Evolution Tracking
+### Risk Evolution Summaries
 
 Tracks snapshot deltas across three categories:
 - **`NEW_RISK`**: Risks present in $S_t$ but absent in $S_{t-1}$.
@@ -243,7 +237,7 @@ Tracks snapshot deltas across three categories:
 
 ---
 
-## 13. Dual-Track Evidence Fusion
+## 14. Evidence Fusion
 
 NOVA unifies text documentation and security assessments into normalized `UnifiedEvidenceItem` objects:
 
@@ -265,7 +259,7 @@ NOVA unifies text documentation and security assessments into normalized `Unifie
 
 ---
 
-## 14. Pairwise NLI Evidence Reasoning
+## 15. Pairwise NLI Evidence Reasoning
 
 The **NLI Engine** (`app/services/ai/nli_engine.py`) builds an $N \times N$ pairwise matrix across all retrieved evidence items:
 
@@ -284,50 +278,64 @@ Evidence B: "POST /admin/transactions requires administrator authorization." (SA
 
 ---
 
-## 15. Evidence Agreement & Consensus
+## 16. Evidence Agreement & Consensus
 
 The **Consensus Engine** (`app/services/ai/consensus_engine.py`) calculates the consensus agreement score ($C_{\text{agreement}}$):
 
-$$C_{\text{agreement}} = \frac{N_{\text{supports}} - N_{\text{contradicts}}}{N_{\text{total\_pairs}}}$$
+$$ C_{\text{agreement}} = \frac{ N_{\text{supports}} - N_{\text{contradicts}} }{ N_{\text{total pairs}} } $$
 
 If evidence directly conflicts, $C_{\text{agreement}}$ drops towards $0.0$, signaling downstream safety gates to override generation.
 
 ---
 
-## 16. 8D Platt Trust Calibration
+## 17. 8D Platt Trust Calibration
 
-The **Confidence Calibrator** (`app/services/search_analytics/calibrator.py`) computes an 8-dimensional feature vector $C$:
+The **Confidence Calibrator** (`app/services/search_analytics/calibrator.py`) converts evidence characteristics into a calibrated trust probability estimate using an 8-dimensional feature vector $C$:
 
-$$C = [C_{\text{retrieval}}, C_{\text{agreement}}, C_{\text{citation}}, C_{\text{reasoning}}, C_{\text{freshness}}, C_{\text{hallucination\_risk}}, C_{\text{source\_reliability}}, C_{\text{user\_feedback}}]$$
+$$ C = [ C_{\text{retrieval}}, C_{\text{agreement}}, C_{\text{citation}}, C_{\text{reasoning}}, C_{\text{freshness}}, C_{\text{hallucination risk}}, C_{\text{source reliability}}, C_{\text{user feedback}} ] $$
 
-### Logistic Platt Scaling Equation
+### Platt Calibration Equations
 
-$$\text{Logit} = \beta_0 + \sum_{i=1}^{8} \beta_i \cdot C_i$$
+First, the linear logit $z$ is computed:
 
-$$\text{TrustScore} = P(\text{Correct} \mid C) = \frac{1}{1 + e^{-\text{Logit}}}$$
+$$ z = \beta_0 + \sum_{i=1}^{8} \beta_i C_i $$
+
+Then, the calibrated probability $P(\text{Correct} \mid C)$ is calculated via the logistic sigmoid function $\sigma(z)$:
+
+$$ P(\text{Correct} \mid C) = \sigma(z) = \frac{1}{1 + e^{-z}} $$
+
+Where:
+- $C$ is the 8-dimensional evidence feature vector.
+- $\beta_0$ is the learned calibration intercept.
+- $\beta_i$ are the calibration coefficients corresponding to feature dimension $i$.
+- $\sigma$ is the standard logistic sigmoid function.
+- The output $P(\text{Correct} \mid C)$ represents the calibrated confidence estimate evaluated by NOVA's safety policy gate.
 
 ---
 
-## 17. Two-Stage Safety Policy Gate
+## 18. Two-Stage Safety Policy Gate
 
 NOVA strictly decouples statistical trust estimation from hard safety policy rules:
 
-```
-Stage 1: Calculate Statistical TrustScore (e.g. 0.942)
-                    │
-                    ▼
-Stage 2: Hard Safety Policy Evaluation
-        ├─► Is C_agreement <= 0.20 OR contradiction_count > 0 ?
-        │     ├── YES ─► Force FALLBACK_WEB or ABSTAIN (Refusal Override)
-        │     └── NO  ─► Allow GENERATE if TrustScore >= 0.70
+```mermaid
+flowchart TD
+    Evidence[Retrieved Evidence] --> Rerank[Cross-Encoder Reranking]
+    Rerank --> NLI[Pairwise NLI Matrix]
+    NLI --> Consensus[Consensus Engine C_agreement]
+    Consensus --> TrustCalc[8D Platt Trust Calibration P_correct]
+    TrustCalc --> PolicyGate{Two-Stage Safety Policy Gate}
+
+    PolicyGate -- "No Contradiction & P_correct >= 0.70" --> GENERATE[GENERATE: Stream Grounded Answer]
+    PolicyGate -- "Low Confidence (P_correct < 0.70)" --> FALLBACK[FALLBACK_WEB: Search Live Web]
+    PolicyGate -- "Critical Contradiction (C_agreement <= 0.20)" --> ABSTAIN[ABSTAIN: Hard Refusal & Explain]
 ```
 
 > [!IMPORTANT]
-> **Safety Guarantee**: High statistical trust (e.g. $94.2\%$) **CANNOT** override a Stage 2 safety policy trigger. If evidence contradicts, generation is blocked.
+> **Safety Guarantee**: High statistical trust (e.g. $P(\text{Correct} \mid C) = 0.942$) **CANNOT** override a Stage 2 safety policy trigger. If evidence contradicts ($C_{\text{agreement}} \le 0.20$ or `contradiction_count > 0`), text generation is blocked.
 
 ---
 
-## 18. Explainable Safety Gate Response
+## 19. Explainable Safety Gate Response
 
 When the Safety Gate triggers a fallback or abstention, it attaches a structured `safety_explanation` payload to the Assistant SSE stream:
 
@@ -354,7 +362,7 @@ The React frontend renders this payload as an interactive, collapsible **`Safety
 
 ---
 
-## 19. Assistant Architecture & SSE Streaming
+## 20. Assistant Architecture & SSE Streaming
 
 The **Assistant Service** (`app/services/assistant/assistant_service.py`) handles streaming responses via Server-Sent Events (SSE):
 
@@ -368,7 +376,7 @@ POST /api/v1/assistant/chat
 
 ---
 
-## 20. Executive Radar
+## 21. Executive Radar
 
 The **Executive Radar** (`app/services/analytics/executive_intelligence.py` & `/executive` route) aggregates high-level platform health:
 
@@ -378,7 +386,7 @@ The **Executive Radar** (`app/services/analytics/executive_intelligence.py` & `/
 
 ---
 
-## 21. Canonical Demonstration Environment
+## 22. Canonical Demonstration Environment
 
 NOVA includes a resettable, deterministic demonstration environment located at [`data/demo_repo/`](file:///Users/23MIS0012/Desktop/NOVA/data/demo_repo/):
 
@@ -398,7 +406,7 @@ PYTHONPATH=backend python -m app.demo.reset
 
 ---
 
-## 22. Frontend Architecture
+## 23. Frontend Architecture
 
 Built using React 18, TypeScript, TailwindCSS, and Lucide React icons:
 
@@ -409,7 +417,7 @@ Built using React 18, TypeScript, TailwindCSS, and Lucide React icons:
 
 ---
 
-## 23. Backend Architecture
+## 24. Backend Architecture
 
 ```
 backend/app/
@@ -428,7 +436,7 @@ backend/app/
 
 ---
 
-## 24. Database Architecture
+## 25. Database Architecture
 
 PostgreSQL with `pgvector` extension for vector similarity search:
 
@@ -443,7 +451,7 @@ PostgreSQL with `pgvector` extension for vector similarity search:
 
 ---
 
-## 25. Technology Stack
+## 26. Technology Stack
 
 - **Backend Framework**: Python 3.10+, FastAPI, Uvicorn
 - **Database & Storage**: PostgreSQL 15, `pgvector`, SQLAlchemy 2.0, Alembic
@@ -454,7 +462,7 @@ PostgreSQL with `pgvector` extension for vector similarity search:
 
 ---
 
-## 26. Testing & Verification Summary
+## 27. Testing & Verification Summary
 
 - **Core Security & RAG Pytest Suite**: **113/113 PASSED** (0.77s)
 - **Canonical Demo Workflow Test Suite**: **4/4 PASSED** (0.25s)
@@ -463,7 +471,7 @@ PostgreSQL with `pgvector` extension for vector similarity search:
 
 ---
 
-## 27. Development Evolution / Architectural Phases
+## 28. Development Evolution / Architectural Phases
 
 ```
 Phase 1: Initial Evidence & RAG Foundation
@@ -481,7 +489,7 @@ Phase 11: Enterprise Public Landing Page & Release Candidate Freeze
 
 ---
 
-## 28. Repository Structure
+## 29. Repository Structure
 
 ```
 .
@@ -499,14 +507,13 @@ Phase 11: Enterprise Public Landing Page & Release Candidate Freeze
 ├── data/
 │   └── demo_repo/            # Canonical demo application fixtures
 ├── docs/                     # Developer documentation guides
-├── NOVA_CANONICAL_DEMO.md    # Canonical demo walkthrough guide
 ├── README.md                 # Master public technical specification
 └── docker-compose.yml        # Multi-container orchestration
 ```
 
 ---
 
-## 29. Running NOVA
+## 30. Running NOVA
 
 ### Prerequisites
 - Python 3.10+
@@ -543,7 +550,7 @@ npm run dev
 
 ---
 
-## 30. Security & Safety Design
+## 31. Security Controls & Safety Design
 
 - **RBAC Permission Gate**: Explicit 5-tier role-to-permission mapping (`require_permission`).
 - **Path Traversal Protection**: Input normalization prevents illegal directory traversal in repository scanners.
@@ -552,14 +559,14 @@ npm run dev
 
 ---
 
-## 31. Current Verification Status
+## 32. Current Verification Status
 
 ```
 =================================================================
                     FINAL SYSTEM VERDICT
 =================================================================
   RELEASE STATUS                   : RELEASE CANDIDATE READY
-  BASELINE COMMIT                  : 6739b88
+  BASELINE COMMIT                  : ef56e5c
   CODEBASE INTEGRITY               : FROZEN, VERIFIED & REPRODUCIBLE
   CANONICAL DEMO WORKFLOW          : 100% VERIFIED (4/4 PASSED)
   CORE TEST SUITES                 : 100% PASSED (113/113 PASSED)
@@ -569,9 +576,9 @@ npm run dev
 
 ---
 
-## 32. Research & Patent-Oriented Technical Areas
+## 33. Research & Patent-Oriented Technical Areas
 
-*Note: This section documents technically distinctive engineering mechanisms implemented in NOVA for prior-art and technical analysis. It does not constitute legal or patentability opinions.*
+*Note: Potentially distinctive technical mechanisms for further prior-art and patentability analysis include the following implemented features. This documentation is for technical evaluation and does not constitute legal or patentability opinions.*
 
 1. **Heterogeneous Evidence Fusion**: Unifying structured AST code facts and unstructured text documentation into normalized `UnifiedEvidenceItem` primitives.
 2. **Pairwise NLI Consensus Matrix ($N \times N$)**: Combining directional neural NLI cross-encoding with version and security-property regex analysis.
