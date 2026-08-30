@@ -109,7 +109,7 @@ export default function GraphExplorerPage() {
   const canvasLayout = useMemo(() => {
     const centerX = 350;
     const centerY = 200;
-    const radius = 170;
+    const radius = 125;
 
     const neighbors = connectedGraph.neighbors;
     const count = neighbors.length;
@@ -211,7 +211,7 @@ export default function GraphExplorerPage() {
               />
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 max-h-[16rem] overflow-y-auto p-1">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 max-h-[24rem] overflow-y-auto p-4">
               {filteredNodes.map((entity) => {
                 const isSelected = selectedNode?.id === entity.id;
                 const relCount = nodeRelationCounts.get(entity.id) ?? entity.chunk_count;
@@ -314,30 +314,31 @@ export default function GraphExplorerPage() {
                         x2={pos.x}
                         y2={pos.y}
                         stroke="url(#beamGradient)"
-                        strokeWidth="2.5"
-                        strokeDasharray="6,4"
+                        strokeWidth="3"
+                        strokeDasharray="8,5"
                         className="animate-[dash_1.5s_linear_infinite]"
                       />
 
                       {/* Relation Label Pill */}
                       <g transform={`translate(${(canvasLayout.centerX + pos.x) / 2}, ${(canvasLayout.centerY + pos.y) / 2})`}>
                         <rect
-                          x="-45"
-                          y="-10"
-                          width="90"
-                          height="20"
-                          rx="10"
+                          x="-60"
+                          y="-13"
+                          width="120"
+                          height="26"
+                          rx="13"
                           fill="#0f172a"
                           stroke="#3b82f6"
-                          strokeWidth="1"
-                          opacity="0.9"
+                          strokeWidth="1.5"
+                          opacity="0.95"
+                          filter="url(#glow)"
                         />
                         <text
                           x="0"
-                          y="3"
+                          y="4"
                           textAnchor="middle"
-                          fill="#60a5fa"
-                          fontSize="9"
+                          fill="#93c5fd"
+                          fontSize="11"
                           fontWeight="bold"
                           fontFamily="monospace"
                         >
@@ -358,7 +359,7 @@ export default function GraphExplorerPage() {
                       <circle
                         cx={pos.x}
                         cy={pos.y}
-                        r="28"
+                        r="36"
                         fill="#3b82f6"
                         opacity="0.15"
                         className="group-hover:opacity-40 transition-opacity"
@@ -366,35 +367,37 @@ export default function GraphExplorerPage() {
                       <circle
                         cx={pos.x}
                         cy={pos.y}
-                        r="20"
+                        r="28"
                         fill="#1e293b"
                         stroke="#3b82f6"
-                        strokeWidth="2"
-                        className="group-hover:stroke-emerald-400 group-hover:scale-110 transition-all"
+                        strokeWidth="2.5"
+                        className="group-hover:stroke-emerald-400 group-hover:scale-110 transition-all shadow-xl"
                         filter="url(#glow)"
                       />
 
                       {/* Node Type Dot */}
-                      <circle cx={pos.x} cy={pos.y} r="6" fill="#10b981" />
+                      <circle cx={pos.x} cy={pos.y} r="8" fill="#10b981" />
 
                       {/* Label below node */}
                       <text
                         x={pos.x}
-                        y={pos.y + 34}
+                        y={pos.y + 45}
                         textAnchor="middle"
-                        fill="#f8fafc"
-                        fontSize="10"
-                        fontWeight="600"
-                        className="group-hover:fill-emerald-400 transition-colors"
+                        fill="#f1f5f9"
+                        fontSize="13"
+                        fontWeight="700"
+                        className="group-hover:fill-emerald-400 transition-colors drop-shadow-md"
                       >
                         {pos.node.label.length > 20 ? pos.node.label.slice(0, 18) + "..." : pos.node.label}
                       </text>
                       <text
                         x={pos.x}
-                        y={pos.y + 45}
+                        y={pos.y + 58}
                         textAnchor="middle"
-                        fill="#94a3b8"
-                        fontSize="8"
+                        fill="#cbd5e1"
+                        fontSize="10"
+                        fontWeight="500"
+                        className="drop-shadow-sm"
                       >
                         {pos.node.entity_type}
                       </text>
@@ -407,7 +410,7 @@ export default function GraphExplorerPage() {
                     <circle
                       cx={canvasLayout.centerX}
                       cy={canvasLayout.centerY}
-                      r="42"
+                      r="50"
                       fill="#3b82f6"
                       opacity="0.25"
                       className="animate-pulse"
@@ -415,35 +418,37 @@ export default function GraphExplorerPage() {
                     <circle
                       cx={canvasLayout.centerX}
                       cy={canvasLayout.centerY}
-                      r="32"
+                      r="40"
                       fill="#1e1b4b"
                       stroke="#6366f1"
-                      strokeWidth="3"
+                      strokeWidth="3.5"
                     />
                     <circle
                       cx={canvasLayout.centerX}
                       cy={canvasLayout.centerY}
-                      r="10"
+                      r="12"
                       fill="#818cf8"
                     />
 
                     <text
                       x={canvasLayout.centerX}
-                      y={canvasLayout.centerY + 48}
+                      y={canvasLayout.centerY + 60}
                       textAnchor="middle"
-                      fill="#818cf8"
-                      fontSize="12"
+                      fill="#a5b4fc"
+                      fontSize="15"
                       fontWeight="bold"
+                      className="drop-shadow-md"
                     >
                       {selectedNode.label}
                     </text>
                     <text
                       x={canvasLayout.centerX}
-                      y={canvasLayout.centerY + 62}
+                      y={canvasLayout.centerY + 76}
                       textAnchor="middle"
-                      fill="#94a3b8"
-                      fontSize="9"
-                      fontWeight="500"
+                      fill="#cbd5e1"
+                      fontSize="11"
+                      fontWeight="600"
+                      className="drop-shadow-sm"
                     >
                       Target Focus Node
                     </text>

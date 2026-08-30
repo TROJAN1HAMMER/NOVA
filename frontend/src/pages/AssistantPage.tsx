@@ -97,32 +97,40 @@ function FeedbackButtons({ messageId }: { messageId: string }) {
 }
 
 function SafetyGateBanner({ explanation }: { explanation: NonNullable<AssistantChatMessage["safetyExplanation"]> }) {
-  const isBlock = explanation.policy_trigger === "CRITICAL_CONTRADICTION" || explanation.decision === "FALLBACK_WEB" || explanation.decision === "ABSTAIN";
+  const isBlock = explanation.decision === "FALLBACK_WEB" || explanation.decision === "ABSTAIN";
+  const isWarning = explanation.decision === "GENERATE_WITH_WARNING" || explanation.policy_trigger === "LOW_RETRIEVAL_SIMILARITY" || explanation.policy_trigger === "SECURITY_QUERY_LOW_CONFIDENCE";
+
+  let bannerStyle = "";
+  let icon = null;
+  let title = null;
+
+  if (isBlock) {
+    bannerStyle = "border-amber-500/40 bg-gradient-to-r from-amber-950/40 via-slate-900/90 to-slate-900 text-amber-200 shadow-amber-950/20";
+    icon = <ShieldAlert className="size-4 text-amber-400 shrink-0" />;
+    title = <span className="text-amber-300">Answer withheld — Conflicting evidence detected</span>;
+  } else if (isWarning) {
+    bannerStyle = "border-amber-500/40 bg-gradient-to-r from-amber-950/40 via-slate-900/90 to-slate-900 text-amber-200 shadow-amber-950/20";
+    icon = <ShieldAlert className="size-4 text-amber-400 shrink-0" />;
+    title = <span className="text-amber-300">Warning — Low evidence confidence</span>;
+  } else {
+    bannerStyle = "border-emerald-500/40 bg-gradient-to-r from-emerald-950/40 via-slate-900/90 to-slate-900 text-emerald-200 shadow-emerald-950/20";
+    icon = <CheckCircle2 className="size-4 text-emerald-400 shrink-0" />;
+    title = <span className="text-emerald-300">Answer grounded in verified documents</span>;
+  }
 
   return (
     <div
       className={cn(
         "w-full rounded-2xl border p-3.5 text-xs space-y-2.5 backdrop-blur-md transition-all shadow-md",
-        isBlock
-          ? "border-amber-500/40 bg-gradient-to-r from-amber-950/40 via-slate-900/90 to-slate-900 text-amber-200 shadow-amber-950/20"
-          : "border-emerald-500/40 bg-gradient-to-r from-emerald-950/40 via-slate-900/90 to-slate-900 text-emerald-200 shadow-emerald-950/20"
+        bannerStyle
       )}
     >
       <div className="flex items-center justify-between font-semibold">
         <span className="flex items-center gap-2 text-xs font-bold tracking-wide">
-          {isBlock ? (
-            <>
-              <ShieldAlert className="size-4 text-amber-400 shrink-0" />
-              <span className="text-amber-300">Answer withheld — Conflicting evidence detected</span>
-            </>
-          ) : (
-            <>
-              <CheckCircle2 className="size-4 text-emerald-400 shrink-0" />
-              <span className="text-emerald-300">Answer grounded in verified documents</span>
-            </>
-          )}
+          {icon}
+          {title}
         </span>
-        <Badge tone={isBlock ? "warning" : "success"}>{explanation.policy_trigger}</Badge>
+        <Badge tone={isBlock || isWarning ? "warning" : "success"}>{explanation.policy_trigger}</Badge>
       </div>
 
       <p className="text-slate-300 leading-relaxed text-xs font-sans">{explanation.explanation}</p>

@@ -39,6 +39,9 @@ services:
       REDIS_URL: redis://redis:6379/0
       PROJECT_NAME: "NOVA"
       ENVIRONMENT: "production"
+      OLLAMA_MODEL: "llama3.2:3b"
+      OLLAMA_BASE_URL: "http://host.docker.internal:11434"
+      AI_MODE: "local"
     ports:
       - "8000:8000"
     depends_on:
@@ -71,6 +74,9 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://nova:nova_secret@postgres:5432/nova_db
       REDIS_URL: redis://redis:6379/0
+      OLLAMA_MODEL: "llama3.2:3b"
+      OLLAMA_BASE_URL: "http://host.docker.internal:11434"
+      AI_MODE: "local"
     command: celery -A celery_worker.celery_app worker --loglevel=info
     depends_on:
       postgres:

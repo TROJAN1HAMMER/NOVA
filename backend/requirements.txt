@@ -41,6 +41,9 @@ ldap3
 fastembed
 pgvector
 pypdf
+pypdfium2
+numpy
+rapidocr-onnxruntime
 docx2txt
 python-docx
 exa-py>=1.0.0
