@@ -2,14 +2,19 @@
 NOVA Security Intelligence — Observation Collector
 Extracts security facts & observations from code, configuration, and interfaces.
 Observations represent security facts, NOT vulnerabilities.
+Supports real AST parsing for Python files with fallback heuristics for path/scope names.
 """
 
+import ast
+import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 import structlog
 
 logger = structlog.get_logger(__name__)
 
+
+import datetime
 
 @dataclass
 class SecurityObservationData:
@@ -19,14 +24,89 @@ class SecurityObservationData:
     evidence_span: str = ""
     confidence: float = 0.90
     provenance: str = "code_ast_fact"
+    lifecycle_state: str = "OBSERVED"  # Explicit lifecycle state: OBSERVED
+    asset_id: str = "asset_default"
+    version_hash: str = "head"
+    timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
+    provenance_chain: List[str] = field(default_factory=lambda: ["code_ast_parser"])
+    transition_condition: str = "AST_NODE_EXTRACTED"
 
 
 class ObservationCollectorService:
-    """Collects security observations across application assets."""
+    """Collects security observations across application assets using AST parsing and heuristic fallbacks."""
+
+    def _collect_ast_observations(self, file_path: str) -> List[SecurityObservationData]:
+        """Parses Python file AST to extract structural security facts."""
+        observations: List[SecurityObservationData] = []
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                code_content = f.read()
+
+            tree = ast.parse(code_content, filename=file_path)
+            lines = code_content.splitlines()
+
+            for node in ast.walk(tree):
+                # 1. Route Decorators (@router.get, @router.post, etc.)
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    for decorator in node.decorator_list:
+                        dec_str = ast.unparse(decorator) if hasattr(ast, "unparse") else ""
+                        if "router." in dec_str or "app." in dec_str:
+                            method = "POST" if "post" in dec_str.lower() else ("GET" if "get" in dec_str.lower() else "HTTP")
+                            line_no = getattr(node, "lineno", 1)
+                            observations.append(SecurityObservationData(
+                                observation_type="PUBLIC_ENDPOINT",
+                                location=f"{file_path}:line {line_no}",
+                                attributes={"method": method, "function_name": node.name, "decorator": dec_str},
+                                evidence_span=lines[line_no - 1] if 0 <= line_no - 1 < len(lines) else dec_str,
+                                provenance="fastapi_route_ast"
+                            ))
+
+                        if "Depends(" in dec_str and ("RequireRole" in dec_str or "auth" in dec_str.lower()):
+                            line_no = getattr(node, "lineno", 1)
+                            observations.append(SecurityObservationData(
+                                observation_type="AUTHORIZATION_BOUNDARY",
+                                location=f"{file_path}:line {line_no}",
+                                attributes={"enforcement": dec_str},
+                                evidence_span=lines[line_no - 1] if 0 <= line_no - 1 < len(lines) else dec_str,
+                                provenance="ast_decorator_dependency"
+                            ))
+
+                # 2. Environment Variables & Secret Usage (os.getenv)
+                elif isinstance(node, ast.Call):
+                    func_str = ast.unparse(node.func) if hasattr(ast, "unparse") else ""
+                    if "getenv" in func_str or "environ" in func_str:
+                        line_no = getattr(node, "lineno", 1)
+                        observations.append(SecurityObservationData(
+                            observation_type="SECRET_USAGE",
+                            location=f"{file_path}:line {line_no}",
+                            attributes={"call": func_str},
+                            evidence_span=lines[line_no - 1] if 0 <= line_no - 1 < len(lines) else func_str,
+                            provenance="ast_env_var_fact"
+                        ))
+
+                    elif "select(" in func_str or "execute(" in func_str:
+                        line_no = getattr(node, "lineno", 1)
+                        observations.append(SecurityObservationData(
+                            observation_type="DATABASE_ACCESS",
+                            location=f"{file_path}:line {line_no}",
+                            attributes={"query_call": func_str},
+                            evidence_span=lines[line_no - 1] if 0 <= line_no - 1 < len(lines) else func_str,
+                            provenance="ast_sqlalchemy_fact"
+                        ))
+
+        except Exception as exc:
+            logger.warning("observation_collector.ast_parse_failed", file_path=file_path, error=str(exc))
+
+        return observations
 
     def collect_observations(self, asset_name: str, location: str) -> List[SecurityObservationData]:
         logger.info("security_intel.collecting_observations", asset_name=asset_name, location=location)
         observations: List[SecurityObservationData] = []
+
+        if os.path.isfile(location) and location.endswith(".py"):
+            ast_obs = self._collect_ast_observations(location)
+            if ast_obs:
+                observations.extend(ast_obs)
 
         if "auth" in location.lower() or "users" in location.lower():
             observations.append(SecurityObservationData(

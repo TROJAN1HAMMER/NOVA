@@ -11,6 +11,8 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 
+import datetime
+
 @dataclass
 class RiskScenarioInference:
     scenario_type: str  # SQL_INJECTION_RISK, PRIVILEGE_ESCALATION_RISK, DATA_LEAK_RISK, UNPROTECTED_ENDPOINT_RISK
@@ -20,6 +22,12 @@ class RiskScenarioInference:
     control_status: str
     potential_impact: str
     verification_state: str = "CANDIDATE"
+    lifecycle_state: str = "RISK_CANDIDATE"  # Explicit lifecycle state: RISK_CANDIDATE
+    parent_control_ids: List[str] = field(default_factory=list)
+    parent_observation_ids: List[str] = field(default_factory=list)
+    inference_timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
+    provenance_chain: List[str] = field(default_factory=lambda: ["code_ast_parser", "control_evaluator", "risk_scenario_engine"])
+    transition_condition: str = "FACTS_AND_CONTROLS_SYNTHESIZED"
 
 
 class RiskScenarioEngine:

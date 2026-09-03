@@ -40,28 +40,36 @@ class PostureTrendEngine:
         return delta, trend
 
     def compute_risk_evolution(
-        self, current_assessments: List[Any], previous_assessments: Optional[List[Any]] = None
+        self,
+        current_assessments: List[Any],
+        previous_assessments: Optional[List[Any]] = None,
+        resolved_history_keys: Optional[Set[str]] = None,
     ) -> Dict[str, Any]:
         """
         Classifies risk evolution between consecutive analysis runs:
-          NEW_RISK        : Present in current run, missing in previous.
+          NEW_RISK        : Present in current run, missing in previous & historical.
+          RESURFACED_RISK : Present in current run, missing in previous, but previously resolved historically.
           RESOLVED_RISK   : Present in previous run, missing or marked VERIFIED_FIXED in current.
           PERSISTENT_RISK : Present in both runs with OPEN status.
         """
+        resolved_history_keys = resolved_history_keys or set()
+
         if previous_assessments is None:
             return {
                 "status": "FIRST_RUN",
                 "new_risks_count": len(current_assessments),
+                "resurfaced_risks_count": 0,
                 "resolved_risks_count": 0,
                 "persistent_risks_count": 0,
                 "new_risks": [
                     {
-                        "risk_type": getattr(a, "risk_type", "UNKNOWN"),
-                        "affected_scope": getattr(a, "affected_scope", "N/A"),
-                        "severity": getattr(a, "severity", "MEDIUM"),
+                        "risk_type": getattr(a, "risk_type", "UNKNOWN") if not isinstance(a, dict) else a.get("risk_type", "UNKNOWN"),
+                        "affected_scope": getattr(a, "affected_scope", "N/A") if not isinstance(a, dict) else a.get("affected_scope", "N/A"),
+                        "severity": getattr(a, "severity", "MEDIUM") if not isinstance(a, dict) else a.get("severity", "MEDIUM"),
                     }
                     for a in current_assessments
                 ],
+                "resurfaced_risks": [],
                 "resolved_risks": [],
                 "persistent_risks": [],
             }
@@ -71,13 +79,15 @@ class PostureTrendEngine:
             scope = getattr(a, "affected_scope", "") if not isinstance(a, dict) else a.get("affected_scope", "")
             return f"{r_type}::{scope}"
 
-        curr_map = {_key(a): a for a in current_assessments if getattr(a, "status", "OPEN") == "OPEN"}
-        prev_map = {_key(a): a for a in previous_assessments if getattr(a, "status", "OPEN") == "OPEN"}
+        curr_map = {_key(a): a for a in current_assessments if (getattr(a, "status", "OPEN") if not isinstance(a, dict) else a.get("status", "OPEN")) == "OPEN"}
+        prev_map = {_key(a): a for a in previous_assessments if (getattr(a, "status", "OPEN") if not isinstance(a, dict) else a.get("status", "OPEN")) == "OPEN"}
 
         curr_keys = set(curr_map.keys())
         prev_keys = set(prev_map.keys())
 
-        new_keys = curr_keys - prev_keys
+        candidate_new = curr_keys - prev_keys
+        resurfaced_keys = candidate_new & resolved_history_keys
+        new_keys = candidate_new - resurfaced_keys
         resolved_keys = prev_keys - curr_keys
         persistent_keys = curr_keys & prev_keys
 
@@ -95,15 +105,18 @@ class PostureTrendEngine:
             }
 
         new_risks = [_fmt(curr_map[k]) for k in new_keys]
+        resurfaced_risks = [_fmt(curr_map[k]) for k in resurfaced_keys]
         resolved_risks = [_fmt(prev_map[k]) for k in resolved_keys]
         persistent_risks = [_fmt(curr_map[k]) for k in persistent_keys]
 
         return {
             "status": "EVALUATED",
             "new_risks_count": len(new_risks),
+            "resurfaced_risks_count": len(resurfaced_risks),
             "resolved_risks_count": len(resolved_risks),
             "persistent_risks_count": len(persistent_risks),
             "new_risks": new_risks,
+            "resurfaced_risks": resurfaced_risks,
             "resolved_risks": resolved_risks,
             "persistent_risks": persistent_risks,
         }

@@ -44,6 +44,7 @@ class EvidenceRelationship:
     scope_match: bool
     property_match: bool
     reason: str
+    contradiction_type: str = "NONE"  # "ACTIVE" | "HISTORICAL" | "VERSION" | "RESOLVED" | "STALE" | "UNVERIFIED" | "NONE"
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -246,6 +247,9 @@ class NLIEngine:
         has_vuln_b = any(k in lower_b for k in self._STATUS_KEYWORDS_VULN)
         has_safe_assert_b = any(k in lower_b for k in self._STATUS_KEYWORDS_SAFE_ASSERT)
 
+        temporal_keywords = {"historical", "deprecated", "formerly", "legacy", "previously", "was vulnerable", "prior to", "superseded"}
+        has_temporal_context = any(k in lower_a or k in lower_b for k in temporal_keywords)
+
         is_opposite_status = (
             ((has_vuln_a and has_safe_assert_b) or (has_safe_assert_a and has_vuln_b) or has_property_conflict)
             and not is_remediation_b
@@ -266,6 +270,8 @@ class NLIEngine:
         # 5. DECISION HIERARCHY
         # =====================================================================
 
+        contradiction_type = "NONE"
+
         # RULE 1: Distinct CVEs -> Not contradictory
         if distinct_cve:
             if has_domain_overlap or lex_overlap > 0.04:
@@ -279,18 +285,24 @@ class NLIEngine:
                 confidence = 0.90
                 reason = "Evidence items cover distinct security vulnerabilities."
 
-        # RULE 2: Version Upgrade Path -> RELATED or SUPPORTS
-        elif different_versions and (has_vuln_a or has_vuln_b):
+        # RULE 2: Version Upgrade Path or Temporal Context -> RELATED or SUPPORTS
+        elif (different_versions or has_temporal_context) and (has_vuln_a or has_vuln_b):
             nli_label = "NEUTRAL"
             relationship = "RELATED"
             confidence = 0.88
-            reason = f"Evidence describes version upgrade or remediation path between versions ({versions_a} vs {versions_b})."
+            if has_temporal_context:
+                contradiction_type = "HISTORICAL"
+                reason = "Evidence describes temporal evolution or historical state assertion rather than active contradiction."
+            else:
+                contradiction_type = "VERSION"
+                reason = f"Evidence describes version upgrade or remediation path between versions ({versions_a} vs {versions_b})."
 
         # RULE 3: Same Scope / Property Conflict + Opposing Status -> CONTRADICTS
         elif is_opposite_status and (scope_match or property_match or same_version or lex_overlap > 0.04):
             nli_label = "CONTRADICTION"
             relationship = "CONTRADICTS"
             confidence = round(max(nli_score, 0.91), 4)
+            contradiction_type = "ACTIVE"
             if property_match and has_property_conflict:
                 reason = f"Same security property ({list(common_props)[0]}) exhibits opposing state assertions ({property_types_a[list(common_props)[0]]} vs {property_types_b[list(common_props)[0]]})."
             elif same_version:
@@ -333,6 +345,7 @@ class NLIEngine:
             scope_match=scope_match,
             property_match=property_match,
             reason=reason,
+            contradiction_type=contradiction_type,
         )
 
         response_cache.set_cached("nli_pair", cache_key, rel_obj.to_dict(), ttl_seconds=_CACHE_TTL_SECONDS)

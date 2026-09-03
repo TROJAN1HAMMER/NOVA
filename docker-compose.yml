@@ -44,6 +44,7 @@ services:
       AI_MODE: "local"
     ports:
       - "8000:8000"
+    command: sh -c "alembic upgrade head && python -m scripts.seed_demo_data && exec uvicorn app.main:app --host 0.0.0.0 --port 8000"
     depends_on:
       postgres:
         condition: service_healthy

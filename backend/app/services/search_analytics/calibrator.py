@@ -7,6 +7,8 @@ import structlog
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+from dataclasses import asdict, dataclass, field
+
 logger = structlog.get_logger(__name__)
 
 SOURCE_RELIABILITY_WEIGHTS: Dict[str, float] = {
@@ -17,6 +19,24 @@ SOURCE_RELIABILITY_WEIGHTS: Dict[str, float] = {
     "user_doc": 0.80,
     "web_search": 0.70,
 }
+
+
+@dataclass
+class AuditableDecisionRecord:
+    query: str
+    evidence_ids: List[str]
+    pairwise_nli_matrix: List[Dict[str, Any]]
+    consensus_metrics: Dict[str, Any]
+    confidence_vector: Dict[str, float]
+    platt_logit: float
+    trust_score: float
+    decision: str  # "GENERATE" | "GENERATE_WITH_WARNING" | "FALLBACK_WEB" | "ABSTAIN"
+    policy_trigger: str
+    explanation_payload: Dict[str, Any]
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
 
 
 class ConfidenceCalibrator:
@@ -83,7 +103,11 @@ class ConfidenceCalibrator:
             "C_user_feedback": round(min(max(user_feedback_score, 0.0), 1.0), 4),
         }
 
-        # Weighted logistic combination (Platt scaling)
+        # Weighted logistic combination (Platt scaling calibration):
+        # logit = 2.5*C_retrieval + 2.0*C_agreement + 1.5*C_citation + 1.0*C_reasoning
+        #         + 1.0*C_freshness - 3.0*C_hallucination_risk + 1.0*C_source_reliability
+        #         + 0.5*C_user_feedback - 2.8
+        # trust_score = 1.0 / (1.0 + exp(-logit))
         logit = (
             2.5 * c_vector["C_retrieval"]
             + 2.0 * c_vector["C_agreement"]

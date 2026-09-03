@@ -11,6 +11,8 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 
+import datetime
+
 @dataclass
 class VerifiedAssessmentData:
     asset_name: str
@@ -25,6 +27,11 @@ class VerifiedAssessmentData:
     remediation: str
     status: str  # OPEN, VERIFIED_FIXED, DISMISSED
     commit_hash: Optional[str] = None
+    lifecycle_state: str = "ASSESSMENT"  # Explicit lifecycle state: ASSESSMENT
+    parent_scenario_ids: List[str] = field(default_factory=list)
+    verification_timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
+    provenance_chain: List[str] = field(default_factory=lambda: ["code_ast_parser", "control_evaluator", "risk_scenario_engine", "scenario_verifier"])
+    transition_condition: str = "CONTROLS_CROSS_REFERENCED_AND_VERIFIED"
 
 
 class ScenarioVerifierService:

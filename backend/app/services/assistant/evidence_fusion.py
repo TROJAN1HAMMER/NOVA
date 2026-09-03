@@ -31,6 +31,13 @@ class UnifiedEvidenceItem:
     cve: Optional[str] = None
     severity: Optional[str] = None
     provenance: Dict[str, Any] = field(default_factory=dict)
+    asset_id: Optional[str] = None
+    version: Optional[str] = None
+    verification_state: str = "VERIFIED"
+    parent_evidence_ids: List[str] = field(default_factory=list)
+    derived_evidence_ids: List[str] = field(default_factory=list)
+    temporal_validity: str = "ACTIVE"  # "ACTIVE" | "HISTORICAL" | "DEPRECATED" | "STALE"
+    security_property: Optional[str] = None
 
     def to_citation_dict(self) -> Dict[str, Any]:
         """Converts item to a citation format suitable for LLM prompt context."""

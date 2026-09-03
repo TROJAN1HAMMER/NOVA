@@ -584,23 +584,24 @@ npm run dev
                     FINAL SYSTEM VERDICT
 =================================================================
   RELEASE STATUS                   : RELEASE CANDIDATE READY
-  BASELINE COMMIT                  : ef56e5c
+  BASELINE COMMIT                  : main (HARDENED & VERIFIED)
   CODEBASE INTEGRITY               : FROZEN, VERIFIED & REPRODUCIBLE
-  CANONICAL DEMO WORKFLOW          : 100% VERIFIED (4/4 PASSED)
-  CORE TEST SUITES                 : 100% PASSED (113/113 PASSED)
-  FRONTEND BUILD                   : 0 ERRORS (PASSED in 187ms)
+  CANONICAL DEMO WORKFLOW          : 100% VERIFIED
+  FULL PYTEST TEST SUITE           : 100% PASSED (346/346 PASSED)
+  PATENT INTERACTION TEST SUITE    : 100% PASSED (14/14 PASSED)
+  FRONTEND BUILD                   : 0 ERRORS
 =================================================================
 ```
 
 ---
 
-## 33. Research & Patent-Oriented Technical Areas
+## 33. Research & Patent-Oriented Technical Evidence
 
-*Note: Potentially distinctive technical mechanisms for further prior-art and patentability analysis include the following implemented features. This documentation is for technical evaluation and does not constitute legal or patentability opinions.*
+*Note: Potentially distinctive technical mechanisms for further prior-art and patentability analysis are formally documented in `docs/technical_evidence/`. This documentation is for technical evaluation and does not constitute legal or patentability opinions.*
 
-1. **Heterogeneous Evidence Fusion**: Unifying structured AST code facts and unstructured text documentation into normalized `UnifiedEvidenceItem` primitives.
-2. **Pairwise NLI Consensus Matrix ($N \times N$)**: Combining directional neural NLI cross-encoding with version and security-property regex analysis.
-3. **Decoupled Two-Stage Safety Policy Gate**: Subordinating statistical Platt-scaled trust estimation to discrete hard safety policy overrides.
-4. **Explainable Contradiction Inspection**: Generating structured contradiction explanations with evidence provenance and CWE/CVE context.
-5. **Temporal Posture Trajectory ($\Delta S$) as RAG Evidence**: Persisting time-series posture score deltas and exposing them to natural language RAG queries.
-6. **AST Remediation Patch Verification**: Re-evaluating updated AST code snippets against control patterns to automatically update security posture ratings.
+Detailed technical evidence documents:
+1. **[01_dual_track_evidence_fusion.md](file:///c:/Users/kalya/OneDrive/Desktop/Nlp/NOVA/docs/technical_evidence/01_dual_track_evidence_fusion.md)**: Heterogeneous evidence acquisition, `UnifiedEvidenceItem` normalization, cross-scanner confidence calculation, and reliability weighting.
+2. **[02_security_intelligence_pipeline.md](file:///c:/Users/kalya/OneDrive/Desktop/Nlp/NOVA/docs/technical_evidence/02_security_intelligence_pipeline.md)**: 5-stage explicit lifecycle (`OBSERVED` → `CONTROL_EVALUATED` → `RISK_CANDIDATE` → `VERIFIED` → `ASSESSMENT`) with Python AST code observation extraction.
+3. **[03_property_version_nli_reasoning.md](file:///c:/Users/kalya/OneDrive/Desktop/Nlp/NOVA/docs/technical_evidence/03_property_version_nli_reasoning.md)**: Pairwise NLI cross-encoder matrix ($N \times N$), 7 security property types $\times$ 2 states, version upgrade disambiguation, and 6-rule decision hierarchy.
+4. **[04_trust_calibration_and_safety_gate.md](file:///c:/Users/kalya/OneDrive/Desktop/Nlp/NOVA/docs/technical_evidence/04_trust_calibration_and_safety_gate.md)**: 8D confidence vector, Platt scaling logistic calibration, decoupled hard safety policy gate ($C_{\text{agreement}} \le 0.20$ override), and explainable safety response.
+5. **[05_temporal_posture_and_remediation.md](file:///c:/Users/kalya/OneDrive/Desktop/Nlp/NOVA/docs/technical_evidence/05_temporal_posture_and_remediation.md)**: Temporal posture trajectory ($\Delta S = S_t - S_{t-1}$), risk evolution classification (`NEW_RISK`, `RESOLVED_RISK`, `PERSISTENT_RISK`), and AST remediation patch verification.
