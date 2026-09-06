@@ -281,6 +281,11 @@ class Settings(BaseSettings):
     github_webhook_secret: str = Field(default="", env="GITHUB_WEBHOOK_SECRET")
     github_webhook_scan_all_branches: bool = Field(default=False, env="GITHUB_WEBHOOK_SCAN_ALL_BRANCHES")
 
+    # GitHub Integration — Token used for authenticated repository metadata lookup
+    # and archive downloads (Security Intelligence repository scanner).
+    # Only read-only 'Contents' permission is required. Never exposed to clients.
+    github_token: str = Field(default="", env="GITHUB_TOKEN")
+
     # Data lifecycle — how long completed/failed knowledge job artifacts are
     # kept before the nightly archive sweep reclaims disk space.
     # Knowledge job DB records are never deleted — only temporary chunk files

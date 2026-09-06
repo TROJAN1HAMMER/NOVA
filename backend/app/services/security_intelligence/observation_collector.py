@@ -1,190 +1,218 @@
 """
 NOVA Security Intelligence — Observation Collector
-Extracts security facts & observations from code, configuration, and interfaces.
-Observations represent security facts, NOT vulnerabilities.
-Supports real AST parsing for Python files with fallback heuristics for path/scope names.
+Extracts security facts & observations from code, configuration, and interfaces using real AST parsing and static rules.
+Observations represent verified security facts and findings across application assets.
 """
 
 import ast
+import datetime
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 import structlog
+
+from app.services.security_intelligence.security_rules import static_security_rules_engine, StaticFindingData
+from app.services.security_intelligence.utils import normalize_repo_path
 
 logger = structlog.get_logger(__name__)
 
 
-import datetime
-
 @dataclass
 class SecurityObservationData:
-    observation_type: str  # PUBLIC_ENDPOINT, USER_CONTROLLED_INPUT, DATABASE_ACCESS, SECRET_USAGE, etc.
+    observation_type: str  # PUBLIC_ENDPOINT, USER_CONTROLLED_INPUT, DATABASE_ACCESS, SECRET_USAGE, AUTHORIZATION_BOUNDARY, AUTHENTICATION_BOUNDARY, PRIVILEGED_OPERATION, EXTERNAL_DEPENDENCY, STATIC_SECURITY_FINDING
     location: str
     attributes: Dict[str, Any] = field(default_factory=dict)
     evidence_span: str = ""
     confidence: float = 0.90
     provenance: str = "code_ast_fact"
-    lifecycle_state: str = "OBSERVED"  # Explicit lifecycle state: OBSERVED
+    lifecycle_state: str = "OBSERVED"
     asset_id: str = "asset_default"
     version_hash: str = "head"
     timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
     provenance_chain: List[str] = field(default_factory=lambda: ["code_ast_parser"])
     transition_condition: str = "AST_NODE_EXTRACTED"
+    finding_data: Optional[StaticFindingData] = None
 
 
 class ObservationCollectorService:
-    """Collects security observations across application assets using AST parsing and heuristic fallbacks."""
+    """Collects security observations across application assets using AST parsing, static rules, and structural inspection."""
 
-    def _collect_ast_observations(self, file_path: str) -> List[SecurityObservationData]:
-        """Parses Python file AST to extract structural security facts."""
+    def _collect_ast_observations_for_file(self, file_path: Path, rel_path: str) -> List[SecurityObservationData]:
         observations: List[SecurityObservationData] = []
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
+            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
                 code_content = f.read()
 
-            tree = ast.parse(code_content, filename=file_path)
+            tree = ast.parse(code_content, filename=str(file_path))
             lines = code_content.splitlines()
 
             for node in ast.walk(tree):
-                # 1. Route Decorators (@router.get, @router.post, etc.)
+                # 1. Route Decorators (@router.get, @router.post, @app.get, etc.)
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    line_no = getattr(node, "lineno", 1)
                     for decorator in node.decorator_list:
                         dec_str = ast.unparse(decorator) if hasattr(ast, "unparse") else ""
-                        if "router." in dec_str or "app." in dec_str:
+                        if any(r in dec_str for r in ["router.", "app.", "blueprint."]):
                             method = "POST" if "post" in dec_str.lower() else ("GET" if "get" in dec_str.lower() else "HTTP")
-                            line_no = getattr(node, "lineno", 1)
+                            is_auth_required = "Depends" in dec_str or "auth" in dec_str.lower()
                             observations.append(SecurityObservationData(
                                 observation_type="PUBLIC_ENDPOINT",
-                                location=f"{file_path}:line {line_no}",
-                                attributes={"method": method, "function_name": node.name, "decorator": dec_str},
-                                evidence_span=lines[line_no - 1] if 0 <= line_no - 1 < len(lines) else dec_str,
+                                location=f"{rel_path}:line {line_no}",
+                                attributes={
+                                    "method": method,
+                                    "function_name": node.name,
+                                    "decorator": dec_str,
+                                    "auth_required": is_auth_required,
+                                },
+                                evidence_span=lines[line_no - 1].strip() if 0 <= line_no - 1 < len(lines) else dec_str,
                                 provenance="fastapi_route_ast"
                             ))
 
-                        if "Depends(" in dec_str and ("RequireRole" in dec_str or "auth" in dec_str.lower()):
-                            line_no = getattr(node, "lineno", 1)
+                        if "Depends(" in dec_str and any(auth_kw in dec_str for auth_kw in ["RequireRole", "Role", "auth", "get_current_user"]):
                             observations.append(SecurityObservationData(
                                 observation_type="AUTHORIZATION_BOUNDARY",
-                                location=f"{file_path}:line {line_no}",
-                                attributes={"enforcement": dec_str},
-                                evidence_span=lines[line_no - 1] if 0 <= line_no - 1 < len(lines) else dec_str,
+                                location=f"{rel_path}:line {line_no}",
+                                attributes={"enforcement": dec_str, "function": node.name},
+                                evidence_span=lines[line_no - 1].strip() if 0 <= line_no - 1 < len(lines) else dec_str,
                                 provenance="ast_decorator_dependency"
                             ))
 
-                # 2. Environment Variables & Secret Usage (os.getenv)
+                    # Check for privileged operations inside function body
+                    if any(adm in node.name.lower() for adm in ["admin", "role", "delete", "grant", "permission", "update_user"]):
+                        observations.append(SecurityObservationData(
+                            observation_type="PRIVILEGED_OPERATION",
+                            location=f"{rel_path}:line {line_no}",
+                            attributes={"operation": node.name, "privileged": True},
+                            evidence_span=lines[line_no - 1].strip() if 0 <= line_no - 1 < len(lines) else f"def {node.name}()",
+                            provenance="ast_function_name_heuristic"
+                        ))
+
+                    # User-controlled input parameters
+                    for arg in node.args.args:
+                        if arg.arg not in ["self", "cls", "db", "session"]:
+                            observations.append(SecurityObservationData(
+                                observation_type="USER_CONTROLLED_INPUT",
+                                location=f"{rel_path}:line {line_no}",
+                                attributes={"parameter": arg.arg, "function": node.name},
+                                evidence_span=lines[line_no - 1].strip() if 0 <= line_no - 1 < len(lines) else arg.arg,
+                                provenance="ast_function_param"
+                            ))
+
+                # 2. Environment Variables & Configuration Usage (os.getenv, settings.)
                 elif isinstance(node, ast.Call):
                     func_str = ast.unparse(node.func) if hasattr(ast, "unparse") else ""
-                    if "getenv" in func_str or "environ" in func_str:
-                        line_no = getattr(node, "lineno", 1)
+                    line_no = getattr(node, "lineno", 1)
+                    norm_loc = normalize_repo_path(f"{rel_path}:line {line_no}")
+                    if "getenv" in func_str or "environ" in func_str or "settings." in func_str:
                         observations.append(SecurityObservationData(
-                            observation_type="SECRET_USAGE",
-                            location=f"{file_path}:line {line_no}",
-                            attributes={"call": func_str},
-                            evidence_span=lines[line_no - 1] if 0 <= line_no - 1 < len(lines) else func_str,
+                            observation_type="ENV_CONFIG_READ",
+                            location=norm_loc,
+                            attributes={"call": func_str, "is_vulnerability": False},
+                            evidence_span=lines[line_no - 1].strip() if 0 <= line_no - 1 < len(lines) else func_str,
                             provenance="ast_env_var_fact"
                         ))
 
-                    elif "select(" in func_str or "execute(" in func_str:
-                        line_no = getattr(node, "lineno", 1)
+                    elif any(db_call in func_str for db_call in ["select(", "execute(", "query(", "raw(", "cursor.execute"]):
                         observations.append(SecurityObservationData(
                             observation_type="DATABASE_ACCESS",
-                            location=f"{file_path}:line {line_no}",
+                            location=norm_loc,
                             attributes={"query_call": func_str},
-                            evidence_span=lines[line_no - 1] if 0 <= line_no - 1 < len(lines) else func_str,
-                            provenance="ast_sqlalchemy_fact"
+                            evidence_span=lines[line_no - 1].strip() if 0 <= line_no - 1 < len(lines) else func_str,
+                            provenance="ast_database_query_fact"
                         ))
 
         except Exception as exc:
-            logger.warning("observation_collector.ast_parse_failed", file_path=file_path, error=str(exc))
+            logger.warning("observation_collector.ast_parse_failed", file_path=str(file_path), error=str(exc))
 
         return observations
 
-    def collect_observations(self, asset_name: str, location: str) -> List[SecurityObservationData]:
+    def collect_observations(
+        self, asset_name: str, location: str, repo_root: Optional[Path] = None
+    ) -> List[SecurityObservationData]:
         logger.info("security_intel.collecting_observations", asset_name=asset_name, location=location)
         observations: List[SecurityObservationData] = []
 
-        if os.path.isfile(location) and location.endswith(".py"):
-            ast_obs = self._collect_ast_observations(location)
-            if ast_obs:
+        root = repo_root or Path(".").resolve()
+        loc_path = Path(location)
+        if not loc_path.is_absolute():
+            resolved_target = (root / loc_path).resolve()
+            if not resolved_target.exists():
+                stripped = location.removeprefix("backend/").lstrip("/")
+                if (root / stripped).exists():
+                    resolved_target = (root / stripped).resolve()
+                elif (root.parent / loc_path).exists():
+                    resolved_target = (root.parent / loc_path).resolve()
+        else:
+            resolved_target = loc_path
+
+        from app.services.security_intelligence.repository_ingestion import IGNORED_DIRS
+
+        files_to_analyze: List[Path] = []
+        if resolved_target.is_file():
+            files_to_analyze.append(resolved_target)
+        elif resolved_target.is_dir():
+            for r, dirs, files in os.walk(resolved_target):
+                dirs[:] = [d for d in dirs if not d.startswith(".") and d not in IGNORED_DIRS]
+                for f in files:
+                    if not f.startswith(".") and Path(f).suffix in [".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".go", ".yml", ".yaml", ".json"]:
+                        fp = Path(r) / f
+                        try:
+                            if fp.stat().st_size < 300 * 1024:  # skip files > 300KB
+                                files_to_analyze.append(fp)
+                        except Exception:
+                            pass
+        if not files_to_analyze:
+            # Check for close matching file by filename or stem (e.g. admin_router.py for admin.py)
+            target_name = Path(location).name
+            stem = Path(location).stem
+            search_roots = [root]
+            if root.name == "backend" and root.parent.exists():
+                search_roots.append(root.parent)
+            for s_root in search_roots:
+                for r, dirs, files in os.walk(s_root):
+                    dirs[:] = [d for d in dirs if not d.startswith(".") and d not in IGNORED_DIRS]
+                    for f in files:
+                        if f == target_name or f == f"{stem}_router.py" or (stem in f and f.endswith(".py") and not f.startswith("test_")):
+                            files_to_analyze.append(Path(r) / f)
+                            break
+                    if files_to_analyze:
+                        break
+                if files_to_analyze:
+                    break
+
+        # Analyze each file for AST facts and static security findings
+        for f_path in files_to_analyze:
+            rel = normalize_repo_path(f_path, root)
+
+            if f_path.suffix == ".py":
+                ast_obs = self._collect_ast_observations_for_file(f_path, rel)
                 observations.extend(ast_obs)
 
-        if "auth" in location.lower() or "users" in location.lower():
-            observations.append(SecurityObservationData(
-                observation_type="PUBLIC_ENDPOINT",
-                location=f"{location}:line 15",
-                attributes={"method": "POST", "route": "/api/v1/auth/login", "auth_required": False},
-                evidence_span="@router.post('/login')",
-                provenance="fastapi_route_decorator"
-            ))
-            observations.append(SecurityObservationData(
-                observation_type="USER_CONTROLLED_INPUT",
-                location=f"{location}:line 18",
-                attributes={"parameter": "username", "source": "request_body"},
-                evidence_span="username: str = Form(...)",
-                provenance="fastapi_param_annotation"
-            ))
-            observations.append(SecurityObservationData(
-                observation_type="AUTHENTICATION_BOUNDARY",
-                location=f"{location}:line 42",
-                attributes={"mechanism": "JWT", "algorithm": "HS256"},
-                evidence_span="jwt.decode(token, SECRET_KEY, algorithms=['HS256'])",
-                provenance="code_ast_fact"
-            ))
-            observations.append(SecurityObservationData(
-                observation_type="DATABASE_ACCESS",
-                location=f"{location}:line 55",
-                attributes={"query_type": "SELECT", "table": "users"},
-                evidence_span="db.execute(select(User).where(User.username == username))",
-                provenance="sqlalchemy_query_fact"
-            ))
-
-        elif "admin" in location.lower():
-            observations.append(SecurityObservationData(
-                observation_type="PUBLIC_ENDPOINT",
-                location=f"{location}:line 10",
-                attributes={"method": "GET", "route": "/api/v1/admin/users", "auth_required": True},
-                evidence_span="@router.get('/users')",
-                provenance="fastapi_route_decorator"
-            ))
-            observations.append(SecurityObservationData(
-                observation_type="AUTHORIZATION_BOUNDARY",
-                location=f"{location}:line 12",
-                attributes={"required_role": "admin", "enforcement": "RequireRole middleware"},
-                evidence_span="dependencies=[Depends(RequireRole('admin'))]",
-                provenance="code_ast_fact"
-            ))
-            observations.append(SecurityObservationData(
-                observation_type="PRIVILEGED_OPERATION",
-                location=f"{location}:line 28",
-                attributes={"operation": "USER_ROLE_UPDATE", "target_table": "users"},
-                evidence_span="user.role = new_role; db.commit()",
-                provenance="code_ast_fact"
-            ))
-
-        elif "config" in location.lower() or "postgresql" in location.lower():
-            observations.append(SecurityObservationData(
-                observation_type="SECRET_USAGE",
-                location=f"{location}:line 5",
-                attributes={"secret_name": "DATABASE_PASSWORD", "storage": "environment_variable"},
-                evidence_span="db_password = os.getenv('DATABASE_PASSWORD')",
-                provenance="env_var_fact"
-            ))
-            observations.append(SecurityObservationData(
-                observation_type="TRUST_BOUNDARY",
-                location=f"{location}:line 1",
-                attributes={"boundary_type": "INTERNAL_SERVICE_TO_DATABASE", "protocol": "PostgreSQL Wire"},
-                evidence_span="postgresql://localhost:5432/nova",
-                provenance="connection_string_fact"
-            ))
-
-        else:
-            observations.append(SecurityObservationData(
-                observation_type="EXTERNAL_DEPENDENCY",
-                location=f"{location}:line 1",
-                attributes={"library": "requests", "version": "2.28.1"},
-                evidence_span="import requests",
-                provenance="import_ast_fact"
-            ))
+            # Static security rules analysis
+            static_findings = static_security_rules_engine.analyze_file(f_path, root)
+            for sf in static_findings:
+                obs_type = "SECRET_EXPOSURE_FINDING" if sf.category == "SECRET_EXPOSURE" else (
+                    "USER_CONTROLLED_INPUT" if sf.category == "INJECTION" else (
+                        "AUTHORIZATION_BOUNDARY" if sf.category == "AUTHENTICATION_AUTHORIZATION" else "STATIC_SECURITY_FINDING"
+                    )
+                )
+                finding_loc = normalize_repo_path(f"{sf.file_path}:line {sf.line_number}", root)
+                observations.append(SecurityObservationData(
+                    observation_type=obs_type,
+                    location=finding_loc,
+                    attributes={
+                        "rule_id": sf.rule_id,
+                        "title": sf.title,
+                        "severity": sf.severity,
+                        "cwe_id": sf.cwe_id,
+                        "finding_data": sf,
+                    },
+                    evidence_span=sf.code_snippet,
+                    confidence=sf.confidence,
+                    provenance=f"rule_{sf.rule_id}",
+                    finding_data=sf,
+                ))
 
         logger.info("security_intel.observations_collected", count=len(observations))
         return observations

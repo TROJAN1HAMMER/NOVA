@@ -135,3 +135,33 @@ class SecurityIntelPostureSnapshot(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     delta_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True, default=0.0)
     trend_direction: Mapped[str] = mapped_column(String(32), nullable=False, default="UNCHANGED")  # IMPROVED, DEGRADED, UNCHANGED, FIRST_RUN
     risk_evolution_summary: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+
+
+class SecurityIntelScan(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "security_intel_scans"
+
+    project_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)  # GITHUB, ZIP, LOCAL
+    source_identifier: Mapped[str] = mapped_column(String(1024), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="QUEUED", index=True)  # QUEUED, INGESTING, DISCOVERING_ASSETS, ANALYZING, EVALUATING_CONTROLS, BUILDING_RISKS, GENERATING_EVIDENCE, COMPLETED, FAILED
+    progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    stage: Mapped[str] = mapped_column(String(128), nullable=False, default="QUEUED")
+    workspace_path: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    posture_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    posture_rating: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    delta_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    trend_direction: Mapped[str] = mapped_column(String(32), nullable=False, default="UNCHANGED")
+
+    result_summary: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    owner_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )

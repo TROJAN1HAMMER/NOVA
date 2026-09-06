@@ -32,8 +32,27 @@ def test_asset_discovery():
     assert "DATABASE" in asset_types
 
 
-def test_observation_collector():
-    obs = observation_collector.collect_observations("NOVA Admin Surface", "backend/app/api/v1/admin.py")
+@pytest.fixture
+def sample_admin_path(tmp_path):
+    admin_file = tmp_path / "admin.py"
+    admin_file.write_text(
+        "import os\n"
+        "AWS_KEY = 'AKIA1234567890ABCDEF'\n"
+        "from fastapi import APIRouter, Depends\n"
+        "router = APIRouter()\n"
+        "@router.get('/public')\n"
+        "def public_endpoint(): return {'status': 'ok'}\n"
+        "@router.post('/role', dependencies=[Depends(RequireRole('admin'))])\n"
+        "def update_role(): return {'updated': True}\n"
+        "@router.post('/unprotected_role')\n"
+        "def unprotect(): return {'leak': True}\n"
+    )
+    return str(admin_file)
+
+
+
+def test_observation_collector(sample_admin_path):
+    obs = observation_collector.collect_observations("NOVA Admin Surface", sample_admin_path)
     assert len(obs) >= 3
     obs_types = {o.observation_type for o in obs}
     assert "PUBLIC_ENDPOINT" in obs_types
@@ -41,35 +60,35 @@ def test_observation_collector():
     assert "PRIVILEGED_OPERATION" in obs_types
 
 
-def test_security_context_graph():
-    obs = observation_collector.collect_observations("NOVA Admin Surface", "backend/app/api/v1/admin.py")
+def test_security_context_graph(sample_admin_path):
+    obs = observation_collector.collect_observations("NOVA Admin Surface", sample_admin_path)
     ctx = security_context_graph.build_context_graph(obs)
     assert "trust_boundaries" in ctx
     assert "data_flows" in ctx
     assert len(ctx["trust_boundaries"]) >= 3
 
 
-def test_control_analyzer():
-    controls = control_analyzer.evaluate_controls("NOVA Admin Surface", "backend/app/api/v1/admin.py")
+def test_control_analyzer(sample_admin_path):
+    controls = control_analyzer.evaluate_controls("NOVA Admin Surface", sample_admin_path)
     assert len(controls) >= 2
     control_types = {c.control_type: c.state for c in controls}
     assert "AUTHORIZATION" in control_types
     assert control_types["AUTHORIZATION"] == "PRESENT"
 
 
-def test_risk_scenario_engine():
-    obs = observation_collector.collect_observations("NOVA Admin Surface", "backend/app/api/v1/admin.py")
-    controls = control_analyzer.evaluate_controls("NOVA Admin Surface", "backend/app/api/v1/admin.py")
+def test_risk_scenario_engine(sample_admin_path):
+    obs = observation_collector.collect_observations("NOVA Admin Surface", sample_admin_path)
+    controls = control_analyzer.evaluate_controls("NOVA Admin Surface", sample_admin_path)
     scenarios = risk_scenario_engine.infer_scenarios("NOVA Admin Surface", obs, controls)
     assert len(scenarios) >= 1
     assert scenarios[0].scenario_type in ["PRIVILEGE_ESCALATION_RISK", "SECRET_EXPOSURE_RISK"]
 
 
-def test_scenario_verifier():
-    obs = observation_collector.collect_observations("NOVA Admin Surface", "backend/app/api/v1/admin.py")
-    controls = control_analyzer.evaluate_controls("NOVA Admin Surface", "backend/app/api/v1/admin.py")
+def test_scenario_verifier(sample_admin_path):
+    obs = observation_collector.collect_observations("NOVA Admin Surface", sample_admin_path)
+    controls = control_analyzer.evaluate_controls("NOVA Admin Surface", sample_admin_path)
     scenarios = risk_scenario_engine.infer_scenarios("NOVA Admin Surface", obs, controls)
-    assessments = scenario_verifier.verify_scenarios("NOVA Admin Surface", "backend/app/api/v1/admin.py", scenarios, controls)
+    assessments = scenario_verifier.verify_scenarios("NOVA Admin Surface", sample_admin_path, scenarios, controls)
     assert len(assessments) >= 1
     assert assessments[0].confidence >= 0.85
     assert assessments[0].status == "OPEN"
@@ -110,33 +129,51 @@ def test_security_evidence_provider():
     assert "PRIVILEGE_ESCALATION_RISK" in evidence[0]["content"] or "admin" in evidence[0]["content"]
 
 
-def test_intelligence_orchestrator():
-    result = security_intelligence_orchestrator.run_full_analysis(".")
+def test_intelligence_orchestrator(tmp_path):
+    (tmp_path / "app.py").write_text("import subprocess\ndef run(c):\n    subprocess.run(c, shell=True)\n")
+    (tmp_path / "db.py").write_text("def query(db, id):\n    return db.execute(f'SELECT * FROM t WHERE id={id}')\n")
+    (tmp_path / "routes.py").write_text("from fastapi import APIRouter\nrouter = APIRouter()\n@router.get('/data')\ndef get_data(): return {}\n")
+    result = security_intelligence_orchestrator.run_full_analysis(str(tmp_path), force_refresh=True)
     assert result["status"] == "COMPLETED"
-    assert len(result["assets"]) >= 4
+    assert len(result["assets"]) >= 1
     assert result["posture"]["posture_score"] > 0
-    assert len(result["assessments"]) >= 4
+    assert len(result["assessments"]) >= 2
+
 
 
 def test_security_intelligence_rest_apis():
-    res_posture = client.get("/api/v1/security-intelligence/posture")
-    assert res_posture.status_code == 200
-    assert "posture" in res_posture.json()
+    prev = security_intelligence_orchestrator._last_results.get(".")
+    try:
+        security_intelligence_orchestrator._last_results["."] = {
+            "status": "COMPLETED",
+            "posture": {"posture_score": 85.0, "posture_rating": "STRONG", "control_coverage": 100.0, "unresolved_risks_count": 0},
+            "assets": [{"asset_name": "API", "asset_type": "API", "location": ".", "trust_boundary": "TB-2"}],
+            "assessments": [],
+            "context_graph": {"discovered_nodes": [], "discovered_edges": []},
+        }
+        res_posture = client.get("/api/v1/security-intelligence/posture")
+        assert res_posture.status_code == 200
+        assert "posture" in res_posture.json()
 
-    res_assets = client.get("/api/v1/security-intelligence/assets")
-    assert res_assets.status_code == 200
-    assert "assets" in res_assets.json()
+        res_assets = client.get("/api/v1/security-intelligence/assets")
+        assert res_assets.status_code == 200
+        assert "assets" in res_assets.json()
 
-    res_assessments = client.get("/api/v1/security-intelligence/assessments")
-    assert res_assessments.status_code == 200
-    assert "assessments" in res_assessments.json()
+        res_assessments = client.get("/api/v1/security-intelligence/assessments")
+        assert res_assessments.status_code == 200
+        assert "assessments" in res_assessments.json()
 
-    res_verify = client.post("/api/v1/security-intelligence/verify-remediation", json={
-        "assessment_id": "assess-001",
-        "code_snippet": "dependencies=[Depends(RequireRole('admin'))]"
-    })
-    assert res_verify.status_code == 200
-    assert res_verify.json()["fixed"] is True
+        res_verify = client.post("/api/v1/security-intelligence/verify-remediation", json={
+            "assessment_id": "assess-001",
+            "code_snippet": "dependencies=[Depends(RequireRole('admin'))]"
+        })
+        assert res_verify.status_code == 200
+        assert res_verify.json()["fixed"] is True
+    finally:
+        if prev is not None:
+            security_intelligence_orchestrator._last_results["."] = prev
+        else:
+            security_intelligence_orchestrator._last_results.pop(".", None)
 
 
 def test_path_traversal_prevention():
