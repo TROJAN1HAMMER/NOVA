@@ -69,11 +69,24 @@ async def list_sessions(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     sessions = await memory_service.list_sessions(db, current_user.id)
+    counts = {}
+    if sessions:
+        from sqlalchemy import func
+        from app.models.chat_message import ChatMessage
+        res = await db.execute(
+            select(ChatMessage.session_id, func.count(ChatMessage.id))
+            .where(ChatMessage.session_id.in_([s.id for s in sessions]))
+            .group_by(ChatMessage.session_id)
+        )
+        counts = dict(res.all())
+
     return [
         {
             "id": s.id,
             "title": s.title,
             "context_summary": s.context_summary,
+            "message_count": counts.get(s.id, 0),
+            "turn_count": counts.get(s.id, 0) // 2,
             "created_at": s.created_at.isoformat(),
         }
         for s in sessions

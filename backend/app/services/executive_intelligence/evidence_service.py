@@ -43,7 +43,7 @@ def render_evidence_block(snapshot: ExecutiveEvidenceSnapshot) -> str:
     lines.append(f"Total processed chunks: {snapshot.total_completed_scans}")
     lines.append(f"Total search analytics logs: {snapshot.total_findings}")
     if snapshot.portfolio_average_brs is not None:
-        lines.append(f"Portfolio average BRS score: {snapshot.portfolio_average_brs:.2f}")
+        lines.append(f"Enterprise Security Posture score: {snapshot.portfolio_average_brs:.1f} / 100 (Authoritative Security Intelligence Scanner)")
     lines.append("Knowledge Base Status: Healthy & Fully Indexed.")
     return "\n".join(lines)
 

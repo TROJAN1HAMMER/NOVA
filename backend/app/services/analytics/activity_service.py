@@ -25,13 +25,29 @@ async def get_my_activity(db: AsyncSession, *, user_id: uuid.UUID) -> MyActivity
     )
     total_docs = doc_count_res.scalar_one() or 0
 
+    # Real average latency from search analytics
+    latency_res = await db.execute(
+        select(func.avg(SearchAnalyticsLog.latency_ms)).where(SearchAnalyticsLog.user_id == user_id)
+    )
+    avg_latency_ms = latency_res.scalar_one()
+    avg_duration = round(float(avg_latency_ms) / 1000.0, 3) if avg_latency_ms is not None else None
+
+    # Real average calibrated confidence from assistant turns
+    trust_res = await db.execute(
+        select(func.avg(ChatMessage.calibrated_trust_score)).where(
+            ChatMessage.calibrated_trust_score.isnot(None)
+        )
+    )
+    avg_trust = trust_res.scalar_one()
+    avg_score = round(float(avg_trust) * 100, 1) if avg_trust is not None else None
+
     return MyActivitySummary(
         total_scans=total_searches,
         scans_by_status={"completed": total_searches},
         total_findings=total_docs,
         findings_by_severity={"knowledge_docs": total_docs},
-        average_scan_duration_seconds=0.45,
-        average_brs_score=95.0,
+        average_scan_duration_seconds=avg_duration,
+        average_brs_score=avg_score,
         recent_scans=[],
     )
 
@@ -39,6 +55,14 @@ async def get_my_activity(db: AsyncSession, *, user_id: uuid.UUID) -> MyActivity
 async def get_team_activity(db: AsyncSession) -> TeamActivitySummary:
     search_count_res = await db.execute(select(func.count(SearchAnalyticsLog.id)))
     total_searches = search_count_res.scalar_one() or 0
+
+    trust_res = await db.execute(
+        select(func.avg(ChatMessage.calibrated_trust_score)).where(
+            ChatMessage.calibrated_trust_score.isnot(None)
+        )
+    )
+    avg_trust = trust_res.scalar_one()
+    avg_score = round(float(avg_trust) * 100, 1) if avg_trust is not None else None
 
     members_res = await db.execute(
         select(User.id, User.email, User.full_name).limit(10)
@@ -48,9 +72,9 @@ async def get_team_activity(db: AsyncSession) -> TeamActivitySummary:
             user_id=u_id,
             email=email,
             full_name=full_name,
-            total_scans=1,
+            total_scans=0,
             total_findings=0,
-            average_brs_score=98.0,
+            average_brs_score=avg_score,
         )
         for u_id, email, full_name in members_res.all()
     ]

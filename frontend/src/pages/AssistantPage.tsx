@@ -47,10 +47,10 @@ function ConfidenceBadge({ confidence }: { confidence: number }) {
           ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300 shadow-emerald-950/20"
           : isMid
           ? "border-amber-500/40 bg-amber-500/10 text-amber-300 shadow-amber-950/20"
-          : "border-cyan-500/40 bg-cyan-500/10 text-cyan-300 shadow-cyan-950/20"
+          : "border-rose-500/40 bg-rose-500/10 text-rose-300 shadow-rose-950/20"
       )}
     >
-      <Zap className="size-3 text-cyan-400 animate-pulse" />
+      <Zap className={cn("size-3", isHigh ? "text-emerald-400" : isMid ? "text-amber-400" : "text-rose-400")} />
       <span>{pct}% calibrated trust</span>
     </span>
   );

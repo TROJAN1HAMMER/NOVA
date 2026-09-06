@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   BarChart3,
   Brain,
@@ -6,6 +6,7 @@ import {
   FileText,
   Layers,
   Network,
+  ShieldCheck,
   TrendingUp,
   Zap,
 } from "lucide-react";
@@ -19,6 +20,7 @@ import { RevealSection, RevealItem } from "../components/landing/RevealSection";
 import { ExecutiveIntelligencePanel } from "../components/executive/ExecutiveIntelligencePanel";
 import { useKnowledgeDocuments } from "../hooks/useKnowledge";
 import { useMyActivity } from "../hooks/useAnalytics";
+import { apiClient } from "../lib/api/client";
 import type { KnowledgeDocument, WeekOverWeekDelta, WeeklyTrendPoint } from "../types/api";
 
 function confidenceBadge(score: number | null): { tone: "success" | "warning" | "danger" | "neutral"; label: string } {
@@ -42,6 +44,42 @@ interface ExecutiveSummary {
 export default function ExecutiveDashboardPage() {
   const { data: docsData, isLoading: docsLoading } = useKnowledgeDocuments({ limit: 200 });
   const { data: activityData, isLoading: activityLoading } = useMyActivity();
+  const [latestSecurityScan, setLatestSecurityScan] = useState<{
+    id: string;
+    projectName: string;
+    postureScore: number | null;
+    postureRating: string | null;
+  } | null>(null);
+
+  useEffect(() => {
+    const fetchLatestScan = async () => {
+      try {
+        interface ScanItem {
+          id: string;
+          project_name: string;
+          status: string;
+          posture_score: number | null;
+          posture_rating: string | null;
+        }
+        const res = await apiClient.get<{ scans: ScanItem[]; count: number }>("/security-intelligence/scans");
+        const scanList = res.data?.scans;
+        if (Array.isArray(scanList)) {
+          const completed = scanList.find((s: ScanItem) => s.status === "COMPLETED" && s.posture_score != null);
+          if (completed) {
+            setLatestSecurityScan({
+              id: completed.id,
+              projectName: completed.project_name,
+              postureScore: completed.posture_score,
+              postureRating: completed.posture_rating,
+            });
+          }
+        }
+      } catch {
+        // quiet fail
+      }
+    };
+    fetchLatestScan();
+  }, []);
 
   const isLoading = docsLoading || activityLoading;
 
@@ -136,42 +174,56 @@ export default function ExecutiveDashboardPage() {
         </RevealItem>
       </RevealSection>
 
-      {/* Confidence Banner */}
-      <RevealSection className="mb-6">
+      {/* Authoritative Security Posture & AI Trust Highlights */}
+      <RevealSection className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <RevealItem>
-          <Card>
-            <CardContent className="flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <Brain className="size-8 text-primary" />
-                <div>
+          <Card className="h-full border-border/80">
+            <CardContent className="p-5 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <ShieldCheck className="size-8 text-emerald-400 shrink-0" />
+                <div className="space-y-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <Badge tone={confidenceInfo.tone}>{confidenceInfo.label}</Badge>
-                    <span className="text-sm text-muted-foreground">
-                      Portfolio avg confidence:{" "}
-                      {summary.confidence != null
-                        ? `${(summary.confidence * 100).toFixed(1)}%`
-                        : "—"}
+                    <Badge tone={latestSecurityScan?.postureRating === "STRONG" ? "success" : latestSecurityScan?.postureRating === "MODERATE" ? "warning" : "neutral"}>
+                      {latestSecurityScan ? `${latestSecurityScan.postureRating || "EVALUATED"}` : "PENDING SCAN"}
+                    </Badge>
+                    <span className="text-sm font-semibold text-foreground">
+                      Enterprise Security Posture:{" "}
+                      {latestSecurityScan?.postureScore != null ? `${latestSecurityScan.postureScore.toFixed(1)} / 100` : "—"}
                     </span>
                   </div>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Average AEKOF retrieval confidence across all assistant interactions.
+                  <p className="text-xs text-muted-foreground truncate">
+                    {latestSecurityScan
+                      ? `Authoritative Security Intelligence score for ${latestSecurityScan.projectName}`
+                      : "No completed Security Intelligence scans recorded yet"}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </RevealItem>
+
+        <RevealItem>
+          <Card className="h-full border-border/80">
+            <CardContent className="p-5 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <Brain className="size-8 text-cyan-400 shrink-0" />
+                <div className="space-y-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <Badge tone={confidenceInfo.tone}>{confidenceInfo.label}</Badge>
+                    <span className="text-sm font-semibold text-foreground">
+                      AI Grounding Trust:{" "}
+                      {summary.confidence != null ? `${(summary.confidence * 100).toFixed(1)}%` : "—"}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Mean calibrated confidence across verified assistant interactions
                   </p>
                 </div>
               </div>
               {wow && (
-                <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                  <span>
-                    This week:{" "}
-                    <strong className="text-foreground">
-                      {wow.scans_this_week} ops
-                    </strong>
-                  </span>
-                  <span>
-                    Last week:{" "}
-                    <strong className="text-foreground">
-                      {wow.scans_last_week} ops
-                    </strong>
-                  </span>
+                <div className="hidden sm:flex flex-col items-end text-xs text-muted-foreground shrink-0 font-mono">
+                  <span>This week: <strong className="text-foreground">{wow.scans_this_week} ops</strong></span>
+                  <span>Last week: <strong className="text-foreground">{wow.scans_last_week} ops</strong></span>
                 </div>
               )}
             </CardContent>

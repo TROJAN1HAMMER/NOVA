@@ -943,13 +943,15 @@ export default function GraphExplorerPage() {
                   </div>
                 )}
                 <div className="flex justify-between items-center">
-                  <span className="text-muted-foreground">GraphRAG Indexing:</span>
-                  <span className="font-semibold text-emerald-400 font-mono">Dual-Pass Symbolic</span>
+                  <span className="text-muted-foreground">Entity Mentions:</span>
+                  <span className="font-semibold text-emerald-400 font-mono">
+                    {selectedNode.chunk_count} chunk(s)
+                  </span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-muted-foreground">Confidence Score:</span>
+                  <span className="text-muted-foreground">Graph Confidence:</span>
                   <span className="font-semibold text-foreground font-mono">
-                    {selectedNode.confidence.toFixed(2)}
+                    {Math.round(selectedNode.confidence * 100)}%
                   </span>
                 </div>
               </div>

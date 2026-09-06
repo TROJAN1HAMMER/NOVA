@@ -230,6 +230,7 @@ export interface AssistantInsufficientContextEvent {
 
 export interface AssistantDoneEvent {
   confidence: number;
+  calibrated_trust_score?: number | null;
   retrieved_count: number;
   latency_ms: number;
 }

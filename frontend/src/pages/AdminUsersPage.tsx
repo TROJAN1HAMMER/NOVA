@@ -80,10 +80,10 @@ export default function AdminUsersPage() {
             <span className="flex items-center gap-1.5 font-medium text-foreground">
               <Users className="size-4 text-primary" /> Active Accounts
             </span>
-            <Badge tone="success">{activeCount} Online</Badge>
+            <Badge tone="success">{activeCount} Active</Badge>
           </div>
           <div className="text-3xl font-bold text-foreground font-mono">{users?.length ?? 0}</div>
-          <div className="text-[11px] text-muted-foreground mt-1">Total registered users</div>
+          <div className="text-[11px] text-muted-foreground mt-1">Total registered accounts</div>
         </Card>
 
         <Card className="relative overflow-hidden p-4 bg-gradient-to-br from-emerald-500/15 via-card to-card border-emerald-500/30">
@@ -247,12 +247,19 @@ export default function AdminUsersPage() {
                             className="hover:bg-muted/30 transition-colors"
                           >
                             <TableCell className="font-medium">
-                              <div className="flex items-center gap-3">
-                                <div className="flex size-8 items-center justify-center rounded-full bg-primary/20 font-bold text-primary text-xs shrink-0">
-                                  {firstChar}
+                                <div className="flex items-center gap-3">
+                                  <div className="flex size-8 items-center justify-center rounded-full bg-primary/20 font-bold text-primary text-xs shrink-0">
+                                    {firstChar}
+                                  </div>
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <span className="text-foreground">{user.email}</span>
+                                    {(user.email.endsWith("@nova.example") || user.email.startsWith("scanner_test_") || user.email.startsWith("audit_admin_")) && (
+                                      <Badge tone="neutral" className="text-[9px] px-1.5 py-0">
+                                        Test Fixture
+                                      </Badge>
+                                    )}
+                                  </div>
                                 </div>
-                                <span className="text-foreground">{user.email}</span>
-                              </div>
                             </TableCell>
                             <TableCell className="text-muted-foreground">{user.full_name || "—"}</TableCell>
                             <TableCell>

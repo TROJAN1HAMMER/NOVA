@@ -31,31 +31,47 @@ export default function MemoryPage() {
   const [isSimulating, setIsSimulating] = useState<boolean>(false);
   const [simulatingStep, setSimulatingStep] = useState<number | null>(null);
 
-  useEffect(() => {
-    const fetchSessionMemory = async () => {
-      try {
-        const token = localStorage.getItem("nova_access_token");
-        const res = await fetch("/api/v1/assistant/sessions", {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.sessions && data.sessions.length > 0) {
-            setSessionTurnCount(data.sessions[0].message_count || 2);
-          }
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+
+  const fetchSessionMemory = async () => {
+    try {
+      const token = localStorage.getItem("nova_access_token");
+      const res = await fetch("/api/v1/assistant/sessions", {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          setActiveSessionId(data[0].id);
+          setSessionTurnCount(data[0].turn_count ?? Math.floor((data[0].message_count || 0) / 2));
+        } else {
+          setActiveSessionId(null);
+          setSessionTurnCount(0);
         }
-      } catch {
-        // Fallback quiet fail
       }
-    };
+    } catch {
+      // Fallback quiet fail
+    }
+  };
+
+  useEffect(() => {
     fetchSessionMemory();
   }, []);
 
   const handleClearShortTerm = async () => {
     setIsClearing(true);
     try {
-      toast.success("Short-Term Buffer Reset", "Layer 1 active conversation sliding window reset to 0 turns.");
+      if (activeSessionId) {
+        const token = localStorage.getItem("nova_access_token");
+        await fetch(`/api/v1/assistant/sessions/${activeSessionId}`, {
+          method: "DELETE",
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+      }
       setSessionTurnCount(0);
+      setActiveSessionId(null);
+      toast.success("Short-Term Buffer Reset", "Layer 1 active conversation sliding window reset to 0 turns.");
+      await fetchSessionMemory();
     } catch {
       toast.error("Failed to reset memory buffer");
     } finally {
@@ -66,17 +82,17 @@ export default function MemoryPage() {
   const handleSimulateFlow = async () => {
     if (isSimulating) return;
     setIsSimulating(true);
-    toast.info("Memory Flow Simulation Started", "Simulating context retrieval through Layers 1-5...");
+    toast.info("Memory Simulation Started", "Executing isolated synthetic context traversal (does not alter production memory)...");
 
     for (let step = 1; step <= 5; step++) {
       setSimulatingStep(step);
       setSelectedLayer(`Layer ${step}`);
-      await new Promise((resolve) => setTimeout(resolve, 800));
+      await new Promise((resolve) => setTimeout(resolve, 600));
     }
 
     setIsSimulating(false);
     setSimulatingStep(null);
-    toast.success("Simulation Complete", "5-Layer Memory Context assembled in 0.4ms.");
+    toast.success("Simulation Complete", "Isolated synthetic memory walkthrough finished across all 5 layers.");
   };
 
   const memoryLayers = [
@@ -92,7 +108,7 @@ export default function MemoryPage() {
       details: [
         "Sliding Window Size: 10 Turns",
         "Storage Engine: PostgreSQL (assistant_chat_messages)",
-        "Latency: 0.2ms local memory read",
+        "Latency: Measured per query via pipeline telemetry",
         "Session State: Active & Auto-syncing",
       ],
     },

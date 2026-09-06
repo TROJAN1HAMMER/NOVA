@@ -98,13 +98,19 @@ export default function RagOperationsPage() {
             <span className="flex items-center gap-1.5 font-medium text-foreground">
               <ThumbsUp className="size-4 text-emerald-400" /> User Satisfaction
             </span>
-            <Badge tone="success">100% Positive</Badge>
+            <Badge tone={feedback?.total_feedback ? ((feedback.positive_rate ?? 0) >= 0.8 ? "success" : "warning") : "neutral"}>
+              {feedback?.total_feedback ? `${Math.round((feedback.positive_rate ?? 0) * 100)}% Positive` : "No Ratings Yet"}
+            </Badge>
           </div>
           <div className="text-3xl font-bold text-emerald-400 font-mono">
-            {feedback?.positive_rate != null ? `${Math.round(feedback.positive_rate * 100)}%` : "100%"}
+            {feedback?.total_feedback
+              ? `${feedback.positive_count} / ${feedback.total_feedback}`
+              : "0 / 0"}
           </div>
           <div className="text-[11px] text-muted-foreground mt-1">
-            {feedback?.total_feedback ?? 0} rating(s) submitted
+            {feedback?.total_feedback
+              ? `${Math.round((feedback.positive_rate ?? 0) * 100)}% positive (${feedback.total_feedback} rating${feedback.total_feedback === 1 ? "" : "s"})`
+              : "No user ratings recorded yet"}
           </div>
         </Card>
       </motion.div>

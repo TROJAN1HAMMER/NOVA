@@ -23,6 +23,7 @@ import { Button } from "../components/ui/Button";
 import { useToast } from "../hooks/useToast";
 import {
   useDeleteKnowledgeDocument,
+  useGraphSnapshot,
   useKnowledgeDocuments,
   useUploadKnowledgeDocument,
 } from "../hooks/useKnowledge";
@@ -35,7 +36,7 @@ const CONNECTOR_TYPES = [
   { id: "git", label: "Git Repository", icon: GitBranch, desc: "Parse codebases & technical markdown docs" },
   { id: "zip", label: "Folder / ZIP Archive", icon: FolderArchive, desc: "Ingest directory trees & archive packages" },
   { id: "json", label: "CSV / JSON Datasets", icon: Database, desc: "Structure tabular knowledge & records" },
-  { id: "notion", label: "Notion / Confluence", icon: FileCode, desc: "Enterprise wiki connector (Future-Ready)", badge: "Connector Ready" },
+  { id: "notion", label: "Notion / Confluence", icon: FileCode, desc: "Enterprise wiki connector (Future-Ready)", badge: "Future-Ready" },
 ];
 
 const PROCESSING_STAGES = [
@@ -63,6 +64,7 @@ export default function SourceStudioPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: documentsData, isLoading } = useKnowledgeDocuments();
+  const { data: graphData } = useGraphSnapshot();
   const uploadMutation = useUploadKnowledgeDocument();
   const deleteMutation = useDeleteKnowledgeDocument();
 
@@ -82,6 +84,11 @@ export default function SourceStudioPage() {
   };
 
   const handleStartProcessing = () => {
+    if (selectedConnector === "notion") {
+      toast.info("Connector Upcoming", "The Notion / Confluence connector is marked as Future-Ready and not yet connected.");
+      return;
+    }
+
     let fileToUpload: File | null = selectedFile;
 
     if (!fileToUpload && inputValue.trim()) {
@@ -141,8 +148,9 @@ export default function SourceStudioPage() {
   }, [documents, searchQuery]);
 
   const totalChunks = useMemo(() => documents.reduce((acc, d) => acc + d.chunk_count, 0), [documents]);
+  const totalTriples = useMemo(() => graphData?.total_relations ?? 0, [graphData]);
   const indexedCount = useMemo(() => documents.filter((d) => d.status === "indexed").length, [documents]);
-  const healthRate = documents.length > 0 ? Math.round((indexedCount / documents.length) * 100) : 100;
+  const healthRate = documents.length > 0 ? `${Math.round((indexedCount / documents.length) * 100)}%` : "—";
 
   return (
     <div className="space-y-6">
@@ -197,7 +205,7 @@ export default function SourceStudioPage() {
               <Network className="size-5" />
             </div>
             <div>
-              <div className="text-xl font-extrabold text-foreground">{totalChunks * 2}</div>
+              <div className="text-xl font-extrabold text-foreground">{totalTriples}</div>
               <div className="text-xs text-muted-foreground">Extracted Triples</div>
             </div>
           </CardContent>
@@ -209,7 +217,7 @@ export default function SourceStudioPage() {
               <Cpu className="size-5" />
             </div>
             <div>
-              <div className="text-xl font-extrabold text-emerald-400">{healthRate}%</div>
+              <div className="text-xl font-extrabold text-emerald-400">{healthRate}</div>
               <div className="text-xs text-muted-foreground">Health Index</div>
             </div>
           </CardContent>

@@ -34,7 +34,13 @@ class TestMyActivityService:
         doc_res = MagicMock()
         doc_res.scalar_one.return_value = 5
 
-        mock_db.execute.side_effect = [search_res, doc_res]
+        latency_res = MagicMock()
+        latency_res.scalar_one.return_value = 450.0  # 450ms -> 0.45s
+
+        trust_res = MagicMock()
+        trust_res.scalar_one.return_value = 0.95  # 0.95 -> 95.0
+
+        mock_db.execute.side_effect = [search_res, doc_res, latency_res, trust_res]
 
         summary = await get_my_activity(mock_db, user_id=user_id)
 
@@ -46,7 +52,7 @@ class TestMyActivityService:
         assert summary.average_scan_duration_seconds == 0.45
         assert summary.average_brs_score == 95.0
         assert summary.recent_scans == []
-        assert mock_db.execute.call_count == 2
+        assert mock_db.execute.call_count == 4
 
     @pytest.mark.asyncio
     async def test_get_my_activity_zero_data(self):
@@ -59,7 +65,13 @@ class TestMyActivityService:
         doc_res = MagicMock()
         doc_res.scalar_one.return_value = 0
 
-        mock_db.execute.side_effect = [search_res, doc_res]
+        latency_res = MagicMock()
+        latency_res.scalar_one.return_value = None
+
+        trust_res = MagicMock()
+        trust_res.scalar_one.return_value = None
+
+        mock_db.execute.side_effect = [search_res, doc_res, latency_res, trust_res]
 
         summary = await get_my_activity(mock_db, user_id=user_id)
 
@@ -67,6 +79,8 @@ class TestMyActivityService:
         assert summary.total_findings == 0
         assert summary.scans_by_status == {"completed": 0}
         assert summary.findings_by_severity == {"knowledge_docs": 0}
+        assert summary.average_scan_duration_seconds is None
+        assert summary.average_brs_score is None
 
 
 # ── 2. Team Activity Service Tests ────────────────────────────────────────────
@@ -80,6 +94,9 @@ class TestTeamActivityService:
         search_res = MagicMock()
         search_res.scalar_one.return_value = 42
 
+        trust_res = MagicMock()
+        trust_res.scalar_one.return_value = 0.98
+
         u1_id = uuid.uuid4()
         u2_id = uuid.uuid4()
 
@@ -89,7 +106,7 @@ class TestTeamActivityService:
             (u2_id, "bob@nova.example", None),  # tests optional full_name
         ]
 
-        mock_db.execute.side_effect = [search_res, members_res]
+        mock_db.execute.side_effect = [search_res, trust_res, members_res]
 
         summary = await get_team_activity(mock_db)
 
@@ -103,7 +120,7 @@ class TestTeamActivityService:
         assert m1.user_id == u1_id
         assert m1.email == "alice@nova.example"
         assert m1.full_name == "Alice Engineer"
-        assert m1.total_scans == 1
+        assert m1.total_scans == 0
         assert m1.total_findings == 0
         assert m1.average_brs_score == 98.0
 
@@ -119,10 +136,13 @@ class TestTeamActivityService:
         search_res = MagicMock()
         search_res.scalar_one.return_value = 0
 
+        trust_res = MagicMock()
+        trust_res.scalar_one.return_value = None
+
         members_res = MagicMock()
         members_res.all.return_value = []
 
-        mock_db.execute.side_effect = [search_res, members_res]
+        mock_db.execute.side_effect = [search_res, trust_res, members_res]
 
         summary = await get_team_activity(mock_db)
 

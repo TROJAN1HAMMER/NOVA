@@ -60,7 +60,7 @@ export default function KnowledgeEvolutionPage() {
     <div className="space-y-6">
       <PageHeader
         title="Knowledge Evolution & Outer-Loop Self-Healing"
-        description="Outer-loop Celery workers density-cluster unhandled retrieval failures using HDBSCAN to auto-synthesize draft FAQ axioms."
+        description="Outer-loop workers cluster recurring retrieval failures from search telemetry to auto-synthesize draft FAQ axioms."
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -75,11 +75,11 @@ export default function KnowledgeEvolutionPage() {
         </Card>
 
         <Card>
-          <CardHeader title="HDBSCAN Clusters" description="Synthesized FAQ candidates" />
+          <CardHeader title="Failure Query Clusters" description="Synthesized FAQ candidates" />
           <CardContent>
             <div className="text-2xl font-extrabold text-amber-400">{pendingClustersCount} Pending</div>
             <p className="text-xs text-muted-foreground mt-1">
-              {metrics ? `${metrics.active_faq_count} active FAQ rules in production` : "Awaiting 1-click administrative promotion"}
+              {metrics ? `${metrics.active_faq_count} active FAQ rules in production` : "Awaiting administrative promotion"}
             </p>
           </CardContent>
         </Card>

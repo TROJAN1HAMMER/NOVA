@@ -22,8 +22,8 @@ async def submit_feedback(
     feature: str,
     reference_id: str,
     rating: int,
-    comment: Optional[str],
-    user_id: Optional[uuid.UUID],
+    comment: Optional[str] = None,
+    user_id: Optional[uuid.UUID] = None,
 ) -> Feedback:
     entry = Feedback(
         feature=feature,

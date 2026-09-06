@@ -81,17 +81,28 @@ export default function BenchmarkPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="11-Baseline Academic Benchmark Suite"
-        description="Empirical performance evaluation & live latency probing across established RAG architectures."
+        title="RAG Architecture Reference Benchmarks & Live Pipeline Probe"
+        description="Comparative analysis across published literature reference baselines with live real-time pipeline latency probing."
         action={
           <Button onClick={handleRunBenchmark} isLoading={benchmark.isPending} disabled={benchmark.isPending} className="gap-2">
             <Play className={`size-4 ${benchmark.isPending ? "animate-spin" : ""}`} />
-            {benchmark.isPending ? "Executing Probe…" : "Run Benchmark Suite"}
+            {benchmark.isPending ? "Executing Probe…" : "Run Live Latency Probe"}
           </Button>
         }
       />
 
-      {/* Animated Top Benchmark Highlights */}
+      {/* Provenance & Methodology Notice */}
+      <div className="rounded-xl border border-primary/30 bg-primary/5 p-3.5 text-xs text-muted-foreground flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          <Activity className="size-4 text-primary shrink-0" />
+          <span>
+            <strong className="text-foreground">Benchmark Provenance:</strong> Baseline architectures are cited from published academic literature (RGB Benchmark, GraphRAG, RAPTOR, HyDE). NOVA metrics denote the architectural specification evaluated in the synthetic validation suite. Click <strong>"Run Live Latency Probe"</strong> to measure your active pipeline.
+          </span>
+        </div>
+        <Badge tone="neutral" className="shrink-0 text-[10px]">Literature Reference Data</Badge>
+      </div>
+
+      {/* Top Benchmark Highlights */}
       <motion.div
         initial={{ opacity: 0, y: 15 }}
         animate={{ opacity: 1, y: 0 }}
@@ -103,10 +114,10 @@ export default function BenchmarkPage() {
             <span className="flex items-center gap-1.5 font-medium text-foreground">
               <Award className="size-4 text-emerald-400" /> Context Precision
             </span>
-            <Badge tone="success">+20.2% vs Avg</Badge>
+            <Badge tone="neutral">Design Target</Badge>
           </div>
           <div className="text-3xl font-bold text-emerald-400 font-mono">88.6%</div>
-          <div className="text-[11px] text-muted-foreground mt-1">Ground-truth precision lead</div>
+          <div className="text-[11px] text-muted-foreground mt-1">Architecture validation target</div>
         </Card>
 
         <Card className="relative overflow-hidden p-4 bg-gradient-to-br from-blue-500/20 via-card to-card border-blue-500/40">
@@ -114,10 +125,10 @@ export default function BenchmarkPage() {
             <span className="flex items-center gap-1.5 font-medium text-foreground">
               <TrendingUp className="size-4 text-blue-400" /> Context Recall
             </span>
-            <Badge tone="primary">91.2% Top</Badge>
+            <Badge tone="neutral">Design Target</Badge>
           </div>
           <div className="text-3xl font-bold text-blue-400 font-mono">91.2%</div>
-          <div className="text-[11px] text-muted-foreground mt-1">Multi-hop evidence recall</div>
+          <div className="text-[11px] text-muted-foreground mt-1">Multi-hop evidence target</div>
         </Card>
 
         <Card className="relative overflow-hidden p-4 bg-gradient-to-br from-purple-500/20 via-card to-card border-purple-500/40">
@@ -125,21 +136,23 @@ export default function BenchmarkPage() {
             <span className="flex items-center gap-1.5 font-medium text-foreground">
               <Activity className="size-4 text-purple-400" /> Hallucination Rate
             </span>
-            <Badge tone="success">2.1% (Low)</Badge>
+            <Badge tone="neutral">Design Target</Badge>
           </div>
           <div className="text-3xl font-bold text-emerald-400 font-mono">2.1%</div>
-          <div className="text-[11px] text-muted-foreground mt-1">~9x lower than Vanilla RAG</div>
+          <div className="text-[11px] text-muted-foreground mt-1">Safety-gated target rate</div>
         </Card>
 
-        <Card className="relative overflow-hidden p-4 bg-gradient-to-br from-amber-500/20 via-card to-card border-amber-500/40">
+        <Card className="relative overflow-hidden p-4 bg-gradient-to-br from-cyan-500/20 via-card to-card border-cyan-500/40">
           <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
             <span className="flex items-center gap-1.5 font-medium text-foreground">
-              <Zap className="size-4 text-amber-400" /> Probed Mean Latency
+              <Zap className="size-4 text-cyan-400" /> Probed Pipeline Latency
             </span>
-            <Badge tone="neutral">Live</Badge>
+            <Badge tone="primary">Live Measurement</Badge>
           </div>
           <div className="text-3xl font-bold text-foreground font-mono">{novaLatency} ms</div>
-          <div className="text-[11px] text-muted-foreground mt-1">2.1x faster than GraphRAG</div>
+          <div className="text-[11px] text-muted-foreground mt-1">
+            {benchmark.data ? "Measured on active pipeline" : "Pipeline probe estimate"}
+          </div>
         </Card>
       </motion.div>
 
@@ -199,8 +212,8 @@ export default function BenchmarkPage() {
         <div className="lg:col-span-2 space-y-4">
           <Card>
             <CardHeader
-              title="Comparative Results Table"
-              description="Publication-ready baseline matrix"
+              title="Architecture Baseline Comparison"
+              description="Published literature reference values (RGB/GraphRAG benchmarks) with live local latency probing"
               action={
                 <div className="flex items-center gap-2">
                   <Filter className="size-3.5 text-muted-foreground" />

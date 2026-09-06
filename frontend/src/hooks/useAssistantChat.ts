@@ -100,8 +100,9 @@ export function useAssistantChat() {
               setMessages((prev) =>
                 prev.map((m) => {
                   if (m.id !== assistantMessageId) return m;
-                  const finalConfidence = event.confidence > 0 ? event.confidence : m.confidence ?? 0.95;
-                  const finalCount = event.retrieved_count || m.citations?.length || 2;
+                  const candidateScore = event.calibrated_trust_score ?? (event.confidence > 0 ? event.confidence : null);
+                  const finalConfidence = candidateScore != null ? candidateScore : (m.confidence ?? 0);
+                  const finalCount = typeof event.retrieved_count === "number" ? event.retrieved_count : (m.citations?.length ?? 0);
                   return {
                     ...m,
                     isStreaming: false,

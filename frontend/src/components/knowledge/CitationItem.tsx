@@ -15,9 +15,8 @@ export interface CitationLike {
 
 export function CitationItem({ citation }: { citation: CitationLike }) {
   const [expanded, setExpanded] = useState(false);
-  const matchPct = typeof citation.similarity_score === "number" && !isNaN(citation.similarity_score) && citation.similarity_score > 0
-    ? Math.round(citation.similarity_score * 100)
-    : 95;
+  const hasValidScore = typeof citation.similarity_score === "number" && !isNaN(citation.similarity_score) && citation.similarity_score > 0;
+  const matchPct = hasValidScore ? Math.round(citation.similarity_score * 100) : null;
 
   return (
     <div className="rounded-xl border border-cyan-500/20 bg-slate-950/60 backdrop-blur-md shadow-sm transition-all hover:border-cyan-500/40 hover:shadow-cyan-950/30 overflow-hidden">
@@ -28,7 +27,7 @@ export function CitationItem({ citation }: { citation: CitationLike }) {
       >
         <span className="min-w-0 flex-1 truncate font-medium text-slate-200 flex items-center gap-2">
           <FileText className="size-3.5 text-cyan-400 shrink-0" />
-          <span className="truncate">{citation.filename}</span>
+          <span className="truncate">{citation.filename || "Knowledge Document"}</span>
           {citation.page_number != null && (
             <span className="text-[10px] rounded-md bg-cyan-950/80 px-1.5 py-0.5 border border-cyan-500/30 text-cyan-300 shrink-0 font-mono">
               p.{citation.page_number}
@@ -37,7 +36,7 @@ export function CitationItem({ citation }: { citation: CitationLike }) {
         </span>
         <span className="flex shrink-0 items-center gap-2">
           <span className="rounded-full bg-cyan-500/10 px-2.5 py-0.5 text-[10px] font-semibold text-cyan-300 border border-cyan-500/30 shadow-[0_0_10px_rgba(6,182,212,0.15)] font-mono">
-            {matchPct}% match
+            {matchPct != null ? `${matchPct}% match` : "Vector Grounded"}
           </span>
           <ChevronDown className={cn("size-3.5 text-slate-400 transition-transform duration-200", expanded && "rotate-180 text-cyan-400")} />
         </span>
