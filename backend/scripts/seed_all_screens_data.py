@@ -820,6 +820,30 @@ async def seed_all(init_only: bool = False, force: bool = False):
         else:
             print("  * Telemetry logs already exist (preserved)")
 
+        feedbacks = [
+            {
+                "feature": "assistant",
+                "reference_id": "session-1",
+                "rating": 5,
+                "comment": "Accurate citations and evidence agreement matrix helped audit the FAPI-01 vulnerability quickly.",
+                "user_id": admin_user.id
+            },
+            {
+                "feature": "knowledge_base",
+                "reference_id": "doc-pci-4.0",
+                "rating": 4,
+                "comment": "Fast semantic retrieval across complex PDF sections.",
+                "user_id": sec_user.id
+            },
+            {
+                "feature": "executive_intelligence",
+                "reference_id": "posture-q3",
+                "rating": 5,
+                "comment": "Clear trajectory deltas and residual risk breakdown.",
+                "user_id": dev_user.id
+            },
+        ]
+
         res_fb = await session.execute(select(func.count(Feedback.id)))
         if res_fb.scalar_one() == 0:
             for fb in feedbacks:

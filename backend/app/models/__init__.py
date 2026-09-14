@@ -28,6 +28,12 @@ from app.models.security_intelligence import (
     SecurityIntelAssessment,
     SecurityIntelPostureSnapshot,
 )
+from app.models.architecture import (
+    ArchitectureSnapshot,
+    ArchitectureComponent,
+    ArchitectureDependency,
+    ArchitectureTraceabilityLink,
+)
 
 __all__ = [
     "User",
@@ -52,4 +58,8 @@ __all__ = [
     "SecurityIntelRiskScenario",
     "SecurityIntelAssessment",
     "SecurityIntelPostureSnapshot",
+    "ArchitectureSnapshot",
+    "ArchitectureComponent",
+    "ArchitectureDependency",
+    "ArchitectureTraceabilityLink",
 ]

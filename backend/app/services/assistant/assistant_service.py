@@ -62,6 +62,17 @@ def is_inventory_query(query: str) -> bool:
     return any(k in q_lower for k in inventory_keywords)
 
 
+def is_architecture_query(query: str) -> bool:
+    """Deterministic routing check for architecture / coupling / dependency intent."""
+    q_lower = query.lower()
+    keywords = [
+        "coupled", "coupling", "cohesion", "instability", "lcom", "circular dependency",
+        "dependency", "depend on", "depends on", "blast radius", "architecture", "hotspot",
+        "afferent", "efferent", "drift", "component"
+    ]
+    return any(k in q_lower for k in keywords)
+
+
 @dataclass
 class Citation:
     document_id: str
@@ -107,6 +118,8 @@ def _citation_header(citation: Citation) -> str:
         if citation.cve:
             parts.append(f"CVE: {citation.cve}")
         return ", ".join(parts)
+    elif citation.source_type in ("architecture_component", "architecture_hotspot"):
+        return f"Architecture [{citation.filename or 'Component'}] Location: {citation.file_path or 'Workspace'}"
     else:
         parts = [f"Source: {citation.filename}"]
         section = citation.section_path or citation.heading
@@ -239,6 +252,63 @@ async def retrieve_and_orchestrate(
                     )
             except Exception as exc:
                 logger.warning("assistant_service.sec_intel_evidence_error", error=str(exc))
+
+        # Track C: Architecture Evidence Retrieval
+        if is_architecture_query(query):
+            try:
+                from app.services.architecture_intelligence.architecture_orchestrator import architecture_orchestrator
+                arch_analysis = architecture_orchestrator.get_latest_analysis()
+                comps = arch_analysis.get("components", [])
+                hotspots = arch_analysis.get("hotspots", [])
+                q_words = set(query.lower().split())
+
+                matching_comps = [
+                    c for c in comps
+                    if any(w in c["name"].lower() or w in c["file_path"].lower() for w in q_words if len(w) > 3)
+                ]
+                if not matching_comps:
+                    sorted_by_coupling = sorted(comps, key=lambda c: (c.get("ca", 0) + c.get("ce", 0)), reverse=True)
+                    matching_comps = sorted_by_coupling[:5]
+
+                for comp in matching_comps[:4]:
+                    knowledge_items.append(
+                        UnifiedEvidenceItem(
+                            source_id=comp["component_id"],
+                            source_type="architecture_component",
+                            title=f"Architecture Component: {comp['name']}",
+                            content=(
+                                f"Component: {comp['name']} ({comp['component_type']}) at {comp['file_path']}\n"
+                                f"Afferent Coupling (Ca): {comp.get('ca', 0)}, Efferent Coupling (Ce): {comp.get('ce', 0)}, Instability (I): {comp.get('instability')}\n"
+                                f"Cohesion LCOM4: {comp.get('lcom4')}, God Component Candidate: {comp.get('is_god_candidate', False)}\n"
+                                f"Circular Dependency: {comp.get('in_circular_dependency', False)}, Max Dependency Depth: {comp.get('dependency_depth', 0)}"
+                            ),
+                            similarity_score=0.92,
+                            rerank_score=0.92,
+                            reliability_weight=0.95,
+                            file_path=comp["file_path"],
+                            line_number=comp.get("line_number"),
+                        )
+                    )
+
+                for h in hotspots[:3]:
+                    knowledge_items.append(
+                        UnifiedEvidenceItem(
+                            source_id=h["component_id"],
+                            source_type="architecture_hotspot",
+                            title=f"Architecture Hotspot: {h['component_name']}",
+                            content=(
+                                f"Hotspot Component: {h['component_name']} (Score: {h['hotspot_score']}, Level: {h['hotspot_level']})\n"
+                                f"Reasons: {'; '.join(h.get('reasons', []))}\n"
+                                f"Correlated Security Findings: {h.get('correlated_security', {}).get('findings_count', 0)}"
+                            ),
+                            similarity_score=0.93,
+                            rerank_score=0.93,
+                            reliability_weight=0.95,
+                            file_path=h["file_path"],
+                        )
+                    )
+            except Exception as exc:
+                logger.warning("assistant_service.architecture_evidence_error", error=str(exc))
 
         # Stage 2: Evidence Fusion & Cross-Encoder Reranking
         fused_items = evidence_fusion_engine.fuse_evidence(
