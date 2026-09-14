@@ -139,3 +139,5 @@ class RemediationImpactResponse(BaseModel):
     mitigated_risk_scenarios: List[Dict[str, Any]]
     remaining_hotspot_status: str
     disclaimer: str
+    direct_dependents_count: Optional[int] = 0
+    max_impact_depth: Optional[int] = 0

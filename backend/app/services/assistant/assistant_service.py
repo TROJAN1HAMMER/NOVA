@@ -356,7 +356,10 @@ async def retrieve_and_orchestrate(
             if is_inventory_query(query) and top_items:
                 confidence = 0.95
             else:
-                confidence = rerank_manager.normalize_confidence(top_items[0].rerank_score) if top_items else 0.0
+                rerank_conf = rerank_manager.normalize_confidence(top_items[0].rerank_score) if top_items else 0.0
+                vec_sim = max([item.similarity_score for item in top_items], default=0.0)
+                # Blend bi-encoder vector similarity and cross-encoder rerank confidence
+                confidence = round(max(vec_sim * 0.4 + rerank_conf * 0.6, rerank_conf), 4) if top_items else 0.0
 
             citations = [
                 Citation(

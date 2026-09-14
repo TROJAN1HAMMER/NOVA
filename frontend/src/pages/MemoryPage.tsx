@@ -18,6 +18,8 @@ import {
   AlertCircle,
   RotateCcw,
   Sliders,
+  Search,
+  Check,
 } from "lucide-react";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Card, CardContent, CardHeader } from "../components/ui/Card";
@@ -32,14 +34,19 @@ interface MemoryItem {
   layer: string;
   title: string;
   content: string;
+  role?: string;
+  turn_number?: number;
+  in_sliding_window?: boolean;
+  session_id?: string;
   provenance: {
     source_type: string;
     source_id: string;
+    session_id?: string;
     origin: string;
     owner_scope: string;
     verification_state: string;
   };
-  lifecycle: "NEW" | "ACTIVE" | "STALE" | "ARCHIVED";
+  lifecycle: string;
   why_remembered: string;
   can_delete: boolean;
   created_at: string | null;
@@ -59,9 +66,13 @@ export default function MemoryPage() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [layerItems, setLayerItems] = useState<MemoryItem[]>([]);
   const [isLoadingItems, setIsLoadingItems] = useState<boolean>(false);
+  const [searchQuery, setSearchQuery] = useState<string>("");
 
   // Why Does NOVA Remember This Modal
   const [selectedWhyItem, setSelectedWhyItem] = useState<MemoryItem | null>(null);
+
+  // Reset Buffer Confirmation Modal
+  const [showResetConfirmModal, setShowResetConfirmModal] = useState<boolean>(false);
 
   // Preference editor state
   const [showPrefModal, setShowPrefModal] = useState<boolean>(false);
@@ -99,6 +110,8 @@ export default function MemoryPage() {
         if (stateData?.layers?.short_term?.session_turn_count !== undefined) {
           setSessionTurnCount(stateData.layers.short_term.session_turn_count);
         }
+      } else {
+        setMemoryState(null);
       }
 
       // Fetch user preferences
@@ -108,11 +121,11 @@ export default function MemoryPage() {
         setPreferences(prefData);
       }
     } catch {
-      // Fallback quiet fail
+      setMemoryState(null);
     }
   };
 
-  const fetchLayerItems = async (layerLevel: string) => {
+  const fetchLayerItems = async (layerLevel: string, customSessionId?: string | null) => {
     setIsLoadingItems(true);
     try {
       const token = localStorage.getItem("nova_access_token");
@@ -126,8 +139,10 @@ export default function MemoryPage() {
         "Layer 5": "organizational",
       };
       const apiLayerId = layerIdMap[layerLevel] || "short_term";
+      const targetSession = customSessionId !== undefined ? customSessionId : activeSessionId;
+      const sessionQuery = (layerLevel === "Layer 1" && targetSession) ? `?session_id=${targetSession}` : "";
 
-      const res = await fetch(`/api/v1/memory/layers/${apiLayerId}/items`, { headers: authHeaders });
+      const res = await fetch(`/api/v1/memory/layers/${apiLayerId}/items${sessionQuery}`, { headers: authHeaders });
       if (res.ok) {
         const items = await res.json();
         setLayerItems(items);
@@ -149,25 +164,60 @@ export default function MemoryPage() {
     if (selectedLayer) {
       fetchLayerItems(selectedLayer);
     }
-  }, [selectedLayer]);
+  }, [selectedLayer, activeSessionId]);
 
   const handleClearShortTerm = async () => {
     setIsClearing(true);
     try {
-      if (activeSessionId) {
-        const token = localStorage.getItem("nova_access_token");
-        await fetch(`/api/v1/assistant/sessions/${activeSessionId}`, {
-          method: "DELETE",
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
+      const token = localStorage.getItem("nova_access_token");
+      const url = activeSessionId
+        ? `/api/v1/memory/sessions/${activeSessionId}/reset`
+        : `/api/v1/memory/sessions/reset`;
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+
+      if (res.ok) {
+        setSessionTurnCount(0);
+        toast.success("Buffer Cleared", "Active conversation 10-turn sliding window reset to 0 turns.");
+        await fetchSessionMemory();
+        await fetchLayerItems("Layer 1");
+      } else {
+        toast.error("Clear Failed", "Could not clear active session turn buffer.");
       }
-      setSessionTurnCount(0);
-      setActiveSessionId(null);
-      toast.success("Short-Term Buffer Reset", "Layer 1 active conversation sliding window reset to 0 turns.");
-      await fetchSessionMemory();
-      await fetchLayerItems("Layer 1");
     } catch {
-      toast.error("Failed to reset memory buffer");
+      toast.error("Error", "Network or server error resetting buffer.");
+    } finally {
+      setIsClearing(false);
+    }
+  };
+
+  const handleConfirmResetSession = async () => {
+    setIsClearing(true);
+    try {
+      const token = localStorage.getItem("nova_access_token");
+      const url = activeSessionId
+        ? `/api/v1/memory/sessions/${activeSessionId}/reset`
+        : `/api/v1/memory/sessions/reset`;
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+
+      if (res.ok) {
+        setShowResetConfirmModal(false);
+        setSessionTurnCount(0);
+        toast.success("Active Session Reset", "Active conversational session turns cleared and buffer reset to 0.");
+        await fetchSessionMemory();
+        await fetchLayerItems(selectedLayer);
+      } else {
+        toast.error("Reset Failed", "Could not reset the active session.");
+      }
+    } catch {
+      toast.error("Reset Error", "Failed to communicate with the memory service.");
     } finally {
       setIsClearing(false);
     }
@@ -191,15 +241,15 @@ export default function MemoryPage() {
       });
 
       if (res.ok) {
-        toast.success("Memory Forgotten", `Safely forgotten: ${item.title}`);
+        toast.success("Memory Forgotten", `Safely removed: ${item.title}`);
         await fetchLayerItems(selectedLayer);
         await fetchSessionMemory();
       } else {
         const err = await res.json();
-        toast.error("Deletion Prevented", err.detail || "Cannot delete this memory item independently.");
+        toast.error("Deletion Prevented", err.detail || "Cannot delete this memory item.");
       }
     } catch {
-      toast.error("Forget Operation Failed", "Network or server error encountered.");
+      toast.error("Forget Failed", "Network or authorization error.");
     }
   };
 
@@ -219,11 +269,12 @@ export default function MemoryPage() {
       if (res.ok) {
         const updated = await res.json();
         setPreferences(updated);
-        toast.success("Preferences Saved", "Persistent user preference memory updated in PostgreSQL.");
+        toast.success("Preferences Synchronized", "Persistent user preference memory updated in PostgreSQL.");
         setShowPrefModal(false);
         if (selectedLayer === "Layer 3") {
           await fetchLayerItems("Layer 3");
         }
+        await fetchSessionMemory();
       } else {
         toast.error("Save Failed", "Could not save user preferences.");
       }
@@ -234,20 +285,20 @@ export default function MemoryPage() {
     }
   };
 
-  const handleSimulateFlow = async () => {
+  const handleDemonstrateFlow = async () => {
     if (isSimulating) return;
     setIsSimulating(true);
-    toast.info("Memory Simulation Started", "Executing isolated synthetic context traversal (does not alter production memory)...");
+    toast.info("Demonstration Started", "Simulating context traversal through all 5 layers (client demonstration only)...");
 
     for (let step = 1; step <= 5; step++) {
       setSimulatingStep(step);
       setSelectedLayer(`Layer ${step}`);
-      await new Promise((resolve) => setTimeout(resolve, 600));
+      await new Promise((resolve) => setTimeout(resolve, 800));
     }
 
     setIsSimulating(false);
     setSimulatingStep(null);
-    toast.success("Simulation Complete", "Isolated synthetic memory walkthrough finished across all 5 layers.");
+    toast.success("Demonstration Complete", "Simulated 5-layer traversal finished. Production memory remains untouched.");
   };
 
   const memoryLayers = [
@@ -257,14 +308,14 @@ export default function MemoryPage() {
       title: "Short-Term Conversational Memory",
       icon: Clock,
       description: "Active 10-turn conversation sliding window buffer per user session.",
-      status: memoryState?.layers?.short_term?.status || `Active (${sessionTurnCount}/10 turns)`,
-      tone: "success" as const,
+      status: sessionTurnCount > 0 ? `Active (${sessionTurnCount}/10 turns)` : "0 / 10 Turns",
+      tone: (sessionTurnCount > 0 ? "success" : "neutral") as "success" | "neutral",
       color: "from-blue-500/20 to-cyan-500/10 border-blue-500/40",
       details: [
         "Sliding Window Size: 10 Turns (20 messages)",
         "Storage Engine: PostgreSQL (chat_messages, chat_sessions)",
-        `Active Sessions: ${memoryState?.layers?.short_term?.active_sessions ?? 1} (${memoryState?.layers?.short_term?.total_turns ?? sessionTurnCount} Total Turns)`,
-        "Isolation: Strict session & user scoping",
+        `Active Session Turns: ${sessionTurnCount} / 10 turns`,
+        "Scope & Isolation: Strictly authenticated user & session",
       ],
     },
     {
@@ -272,15 +323,17 @@ export default function MemoryPage() {
       stepNum: 2,
       title: "Long-Term Semantic Memory",
       icon: Brain,
-      description: "Celery async worker summarizes older turns into session context vectors.",
-      status: memoryState?.layers?.long_term?.status || "Compressed & Indexed",
-      tone: "primary" as const,
+      description: "Older conversational context compressed & indexed for long-term retrieval.",
+      status: (memoryState?.layers?.long_term?.compressed_summaries ?? 0) > 0
+        ? `${memoryState.layers.long_term.compressed_summaries} Compressed Contexts`
+        : "No Compressed Summaries",
+      tone: ((memoryState?.layers?.long_term?.compressed_summaries ?? 0) > 0 ? "primary" : "neutral") as "primary" | "neutral",
       color: "from-indigo-500/20 to-purple-500/10 border-indigo-500/40",
       details: [
-        "Embedding Dimension: 384-dim FastEmbed",
-        `Vector Engine: pgvector (${memoryState?.layers?.long_term?.vector_count ?? 15} vectors indexed)`,
-        `Compressed Summaries: ${memoryState?.layers?.long_term?.compressed_summaries ?? 2} persistent session contexts`,
-        "Retention: Permanent enterprise archival",
+        "Embedding Dimension: 384-dim FastEmbed (BAAI/bge-small-en-v1.5)",
+        `Vector Engine: PostgreSQL pgvector (${memoryState?.layers?.long_term?.vector_count ?? 0} vectors)`,
+        `Compressed Summaries: ${memoryState?.layers?.long_term?.compressed_summaries ?? 0} user session contexts`,
+        "Scope: Older multi-turn conversation synthesis",
       ],
     },
     {
@@ -289,13 +342,13 @@ export default function MemoryPage() {
       title: "User Preference Memory",
       icon: UserCheck,
       description: "User role, department parameters, and language preference settings.",
-      status: memoryState?.layers?.preferences?.status || `Synchronized (${(roleDisplayName || role || "SECURITY_ENGINEER").toUpperCase()})`,
+      status: `Synchronized (${(roleDisplayName || role || "DEVELOPER").toUpperCase()})`,
       tone: "neutral" as const,
       color: "from-emerald-500/20 to-teal-500/10 border-emerald-500/40",
       details: [
-        `Active Platform Role: ${(memoryState?.layers?.preferences?.user_role || roleDisplayName || role || "SECURITY_ENGINEER").toUpperCase()}`,
-        `System Configurations: ${memoryState?.layers?.preferences?.active_settings_count ?? 7} active settings in PostgreSQL`,
-        "Permission Context: Evaluated on every prompt",
+        `Designated Role: ${(memoryState?.layers?.preferences?.user_role || roleDisplayName || role || "DEVELOPER").toUpperCase()}`,
+        `Department Context: ${preferences.department || "Not specified"}`,
+        `Language: ${preferences.language || "English (US)"}`,
         `Tone Calibration: ${preferences.tone || "Executive Technical Synthesis"}`,
       ],
     },
@@ -304,15 +357,17 @@ export default function MemoryPage() {
       stepNum: 4,
       title: "Task Execution Memory",
       icon: Layers,
-      description: "Multi-turn agent execution plan and step state tracker.",
-      status: memoryState?.layers?.task_execution?.status || "Verified Checkpoints",
+      description: "Multi-step task execution state, reasoning checkpoints, and scan jobs.",
+      status: (memoryState?.layers?.task_execution?.checkpoints_count ?? 0) > 0
+        ? `${memoryState.layers.task_execution.checkpoints_count} Checkpoints`
+        : "Idle",
       tone: "neutral" as const,
       color: "from-amber-500/20 to-orange-500/10 border-amber-500/40",
       details: [
-        "Execution Engine: Subagent orchestrator",
-        `Last Active Plan: ${memoryState?.layers?.task_execution?.last_active_plan || "STAGE_2_SAFETY_GATE_PASS"}`,
-        `Checkpoints Recorded: ${memoryState?.layers?.task_execution?.checkpoints_count ?? 9} verified assessment traces`,
-        "Status: Ready for multi-turn tasks",
+        "Execution Engine: Reasoning trace & security intel pipeline",
+        `Last Active Stage: ${memoryState?.layers?.task_execution?.last_active_plan || "STAGE_2_SAFETY_GATE_PASS"}`,
+        `Verified Checkpoints: ${memoryState?.layers?.task_execution?.checkpoints_count ?? 0} traces in PostgreSQL`,
+        "Scope: Multi-turn workflow state tracking",
       ],
     },
     {
@@ -320,15 +375,15 @@ export default function MemoryPage() {
       stepNum: 5,
       title: "Organizational Axiom Memory",
       icon: ShieldCheck,
-      description: "High-frequency domain concepts & active Stage 0 FAQ rules.",
-      status: memoryState?.layers?.organizational?.status || "Active (0ms Match)",
+      description: "High-confidence organizational rules and verified Stage-0 FAQ rules.",
+      status: `${memoryState?.layers?.organizational?.active_rules ?? 0} Verified Axioms`,
       tone: "success" as const,
       color: "from-emerald-500/25 to-lime-500/10 border-emerald-500/50",
       details: [
-        `Axiom Rules Count: ${memoryState?.layers?.organizational?.active_rules ?? 14} Active Stage 0 Rules`,
-        `Knowledge Gap Candidates: ${memoryState?.layers?.organizational?.pending_gap_candidates ?? 3} in Evolution Inbox`,
-        "Compliance Scope: PCI-DSS v4.0 & OWASP FAPI",
-        "Auto-Self Healing: Knowledge Gap Promotion",
+        `Active Stage-0 Axioms: ${memoryState?.layers?.organizational?.active_rules ?? 0} verified rules`,
+        `Draft Gap Candidates: ${memoryState?.layers?.organizational?.pending_gap_candidates ?? 0} in evolution inbox`,
+        "Execution Gate: Pre-vector deterministic match",
+        "Governance: RBAC-restricted modification (FAQ_WRITE)",
       ],
     },
   ];
@@ -339,23 +394,79 @@ export default function MemoryPage() {
   const getLifecycleTone = (lifecycle: string) => {
     switch (lifecycle) {
       case "NEW":
-        return "primary";
+      case "DRAFT":
+        return "warning";
       case "ACTIVE":
+      case "VERIFIED":
+      case "COMPLETED":
         return "success";
       case "STALE":
+      case "PAUSED":
         return "warning";
       case "ARCHIVED":
+      case "IDLE":
         return "neutral";
+      case "FAILED":
+        return "danger";
       default:
         return "neutral";
     }
   };
 
+  const filteredItems = layerItems.filter((item) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      item.title.toLowerCase().includes(q) ||
+      item.content.toLowerCase().includes(q) ||
+      (item.provenance?.origin && item.provenance.origin.toLowerCase().includes(q)) ||
+      (item.role && item.role.toLowerCase().includes(q)) ||
+      item.id.toLowerCase().includes(q)
+    );
+  });
+
+  const getEmptyStateMessage = () => {
+    switch (selectedLayer) {
+      case "Layer 1":
+        return {
+          title: "0 / 10 Turns",
+          description: "No conversational memory has been recorded for this session.",
+        };
+      case "Layer 2":
+        return {
+          title: "No Long-Term Semantic Memories Available",
+          description: "No long-term semantic memories available for this user account. Older turns are automatically compressed once sessions exceed the sliding window.",
+        };
+      case "Layer 3":
+        return {
+          title: "No Preferences Configured",
+          description: "No user preferences configured. Use 'Configure Preferences' to configure department and tone.",
+        };
+      case "Layer 4":
+        return {
+          title: "No Active Task Execution State",
+          description: "No active task execution state found for this session.",
+        };
+      case "Layer 5":
+        return {
+          title: "No Verified Organizational Axioms Available",
+          description: "No verified organizational axioms available. Draft evolution candidates require domain expert promotion.",
+        };
+      default:
+        return {
+          title: "No Records Found",
+          description: `No stored memory records found in ${activeDetail.title}.`,
+        };
+    }
+  };
+
+  const emptyState = getEmptyStateMessage();
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Hierarchical 5-Layer Enterprise Memory Engine"
-        description="Live inspection, provenance tracking, user preferences, and safe memory lifecycle management."
+        description="Inspectable, isolated memory management backed by PostgreSQL persistence and authoritative lifecycle tracking."
         action={
           <div className="flex items-center gap-2">
             <Button
@@ -368,20 +479,42 @@ export default function MemoryPage() {
             </Button>
             <Button
               variant="outline"
-              onClick={handleSimulateFlow}
+              onClick={handleDemonstrateFlow}
               disabled={isSimulating}
               className="gap-2 border-primary/40 bg-primary/10 hover:bg-primary/20"
             >
               <Play className={`size-4 text-primary ${isSimulating ? "animate-spin" : ""}`} />
-              {isSimulating ? `Simulating Layer ${simulatingStep}...` : "Simulate Flow"}
+              {isSimulating ? `Demonstrating Layer ${simulatingStep}...` : "Demonstrate Memory Flow"}
             </Button>
-            <Button variant="outline" onClick={handleClearShortTerm} isLoading={isClearing} className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowResetConfirmModal(true)}
+              isLoading={isClearing}
+              className="gap-2 hover:border-danger hover:text-danger"
+            >
               <Trash2 className="size-4 text-danger" />
               Reset Buffer
             </Button>
           </div>
         }
       />
+
+      {/* Simulation Notice Banner */}
+      {isSimulating && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex items-center justify-between p-3 rounded-lg bg-primary/15 border border-primary/40 text-xs text-primary"
+        >
+          <div className="flex items-center gap-2 font-medium">
+            <Activity className="size-4 animate-spin" />
+            <span>CLIENT SIMULATION ACTIVE · DOES NOT MODIFY PRODUCTION MEMORY</span>
+          </div>
+          <span className="text-[11px] text-muted-foreground">
+            Demonstrating context traversal through Layer {simulatingStep}
+          </span>
+        </motion.div>
+      )}
 
       {/* Live Health Metrics */}
       <motion.div
@@ -390,6 +523,7 @@ export default function MemoryPage() {
         transition={{ duration: 0.3 }}
         className="grid grid-cols-1 gap-4 sm:grid-cols-3"
       >
+        {/* Metric 1: Active Session Context */}
         <Card className="relative overflow-hidden p-4 bg-card/60 backdrop-blur-md border-border/60 hover:border-primary/50 transition-colors">
           <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
             <span className="flex items-center gap-2">
@@ -401,12 +535,16 @@ export default function MemoryPage() {
             <span>
               {sessionTurnCount} <span className="text-xs text-muted-foreground font-normal">/ 10 Turns</span>
             </span>
-            <Badge tone="success" className="animate-pulse">
-              LIVE
+            <Badge tone={sessionTurnCount > 0 ? "success" : "neutral"} className={sessionTurnCount > 0 ? "animate-pulse" : ""}>
+              {sessionTurnCount > 0 ? "LIVE" : "EMPTY"}
             </Badge>
           </div>
+          <p className="text-[11px] text-muted-foreground mt-1 truncate">
+            {activeSessionId ? `Session: ${activeSessionId.slice(0, 8)}...` : "No active session"}
+          </p>
         </Card>
 
+        {/* Metric 2: Truthful Vector Memory Health */}
         <Card className="relative overflow-hidden p-4 bg-card/60 backdrop-blur-md border-border/60 hover:border-emerald-500/50 transition-colors">
           <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
             <span className="flex items-center gap-2">
@@ -414,21 +552,42 @@ export default function MemoryPage() {
             </span>
             <Sparkles className="size-3.5 text-emerald-400" />
           </div>
-          <div className="text-2xl font-bold text-emerald-500 flex items-center gap-2">
-            100% <Badge tone="success">ONLINE</Badge>
+          <div className="text-2xl font-bold text-foreground flex items-center gap-2">
+            {memoryState?.health?.status === "ONLINE" ? (
+              <>
+                <span className="text-emerald-500">ONLINE</span>
+                <Badge tone="success">READY</Badge>
+              </>
+            ) : memoryState?.health?.status === "DEGRADED" ? (
+              <>
+                <span className="text-amber-400">DEGRADED</span>
+                <Badge tone="warning">ATTENTION</Badge>
+              </>
+            ) : (
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                HEALTH STATUS UNAVAILABLE
+              </span>
+            )}
           </div>
+          <p className="text-[11px] text-muted-foreground mt-1">
+            {memoryState?.health?.storage_engine || "PostgreSQL 16 + pgvector"}
+          </p>
         </Card>
 
+        {/* Metric 3: Stage 0 Axiom Cache (Truthful, No Fake 0ms) */}
         <Card className="relative overflow-hidden p-4 bg-card/60 backdrop-blur-md border-border/60 hover:border-amber-500/50 transition-colors">
           <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
             <span className="flex items-center gap-2">
               <ShieldCheck className="size-4 text-amber-500" /> Stage 0 Axiom Cache
             </span>
-            <span className="text-[10px] text-emerald-400 font-mono">0ms Hit</span>
+            <Badge tone="neutral" className="text-[10px]">STAGE 0 GATE</Badge>
           </div>
           <div className="text-2xl font-bold text-foreground">
-            0ms <span className="text-xs text-muted-foreground font-normal">Pre-Vector Cache</span>
+            {memoryState?.layers?.organizational?.active_rules ?? 0} <span className="text-xs text-muted-foreground font-normal">Verified Rules</span>
           </div>
+          <p className="text-[11px] text-muted-foreground mt-1">
+            Pre-Vector Cache · Latency: <span className="font-mono text-muted-foreground">Not measured</span>
+          </p>
         </Card>
       </motion.div>
 
@@ -441,10 +600,10 @@ export default function MemoryPage() {
       >
         <div className="flex items-center justify-between mb-3 text-xs">
           <span className="font-semibold text-foreground flex items-center gap-2">
-            <Zap className="size-4 text-primary animate-bounce" /> Live Multi-Tier Retrieval Stream
+            <Zap className="size-4 text-primary animate-bounce" /> 5-Layer Hierarchical Retrieval Flow
           </span>
           <span className="text-muted-foreground text-[11px]">
-            {isSimulating ? `Active Signal: Layer ${simulatingStep}` : "Select any layer to inspect parameters & records"}
+            {isSimulating ? `Active Simulation Step: Layer ${simulatingStep}` : "Click any layer to inspect live database records"}
           </span>
         </div>
 
@@ -562,7 +721,13 @@ export default function MemoryPage() {
 
               {activeDetail.level === "Layer 1" && (
                 <div className="pt-2">
-                  <Button variant="outline" size="sm" onClick={handleClearShortTerm} className="w-full gap-2 hover:border-danger hover:text-danger">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleClearShortTerm}
+                    isLoading={isClearing}
+                    className="w-full gap-2 hover:border-danger hover:text-danger"
+                  >
                     <Trash2 className="size-3.5 text-danger" /> Clear Layer 1 Turn Buffer
                   </Button>
                 </div>
@@ -592,27 +757,52 @@ export default function MemoryPage() {
           <Card className="border-primary/30 h-full shadow-lg">
             <CardHeader
               title={`Inspected Records: ${activeDetail.title}`}
-              description={`Authoritative persistent state in PostgreSQL (${layerItems.length} records retrieved)`}
+              description={`Authoritative persistent state in PostgreSQL (${filteredItems.length} records shown)`}
               action={
-                <Button variant="outline" size="sm" onClick={() => fetchLayerItems(selectedLayer)} isLoading={isLoadingItems} className="gap-1.5">
-                  <RotateCcw className="size-3.5" /> Refresh Records
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={async () => {
+                      await fetchSessionMemory();
+                      await fetchLayerItems(selectedLayer);
+                      toast.info("Refreshed", "Retrieved fresh memory records from PostgreSQL.");
+                    }}
+                    isLoading={isLoadingItems}
+                    className="gap-1.5"
+                  >
+                    <RotateCcw className="size-3.5" /> Refresh Records
+                  </Button>
+                </div>
               }
             />
             <CardContent className="pt-2 space-y-3">
+              {/* Search Memory Filter */}
+              <div className="relative">
+                <Search className="absolute left-3 top-2.5 size-3.5 text-muted-foreground" />
+                <input
+                  type="text"
+                  placeholder={`Search memory records in ${activeDetail.title}...`}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-3 py-1.5 text-xs rounded-md bg-muted/30 border border-border/60 text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary transition-colors"
+                />
+              </div>
+
               {isLoadingItems ? (
                 <div className="py-12 text-center text-xs text-muted-foreground">
                   <Activity className="size-6 text-primary animate-spin mx-auto mb-2" />
                   Inspecting live database records for {selectedLayer}...
                 </div>
-              ) : layerItems.length === 0 ? (
-                <div className="py-12 text-center text-xs text-muted-foreground border border-dashed rounded-lg">
-                  <AlertCircle className="size-6 text-muted-foreground mx-auto mb-2 opacity-50" />
-                  No stored memory records found in {activeDetail.title}.
+              ) : filteredItems.length === 0 ? (
+                <div className="py-12 text-center text-xs text-muted-foreground border border-dashed border-border/60 rounded-lg p-6">
+                  <AlertCircle className="size-6 text-muted-foreground mx-auto mb-2 opacity-60" />
+                  <p className="font-semibold text-foreground text-sm mb-1">{emptyState.title}</p>
+                  <p className="text-muted-foreground max-w-md mx-auto">{emptyState.description}</p>
                 </div>
               ) : (
-                <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
-                  {layerItems.map((item) => (
+                <div className="space-y-3 max-h-[520px] overflow-y-auto pr-1">
+                  {filteredItems.map((item) => (
                     <motion.div
                       key={item.id}
                       initial={{ opacity: 0, y: 8 }}
@@ -620,16 +810,26 @@ export default function MemoryPage() {
                       className="p-3.5 rounded-lg border border-border/60 bg-muted/20 hover:border-primary/40 hover:bg-muted/30 transition-colors"
                     >
                       <div className="flex items-start justify-between gap-3 mb-1.5">
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-2">
-                            <h4 className="text-xs font-semibold text-foreground">{item.title}</h4>
+                        <div className="space-y-0.5 flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <h4 className="text-xs font-semibold text-foreground truncate">{item.title}</h4>
                             <Badge tone={getLifecycleTone(item.lifecycle)}>{item.lifecycle}</Badge>
+
+                            {/* Layer 1 Sliding Window Status */}
+                            {item.in_sliding_window !== undefined && (
+                              <Badge tone={item.in_sliding_window ? "success" : "neutral"} className="text-[10px]">
+                                {item.in_sliding_window ? "IN SLIDING WINDOW" : "ARCHIVED POSTGRESQL"}
+                              </Badge>
+                            )}
+
+                            {/* Verification State */}
                             {item.provenance?.verification_state && (
                               <Badge tone="neutral" className="text-[10px] font-mono">
                                 {item.provenance.verification_state}
                               </Badge>
                             )}
                           </div>
+
                           <p className="text-[11px] text-muted-foreground line-clamp-2 mt-1">
                             {item.content}
                           </p>
@@ -663,10 +863,10 @@ export default function MemoryPage() {
                       {/* Provenance Footer */}
                       <div className="mt-2 pt-2 border-t border-border/30 flex items-center justify-between text-[11px] text-muted-foreground">
                         <span className="truncate max-w-[70%]">
-                          Origin: <strong className="text-foreground">{item.provenance?.origin || "Provenance unavailable"}</strong>
+                          Origin: <strong className="text-foreground font-normal">{item.provenance?.origin || "Provenance unavailable"}</strong>
                         </span>
                         <span className="font-mono text-[10px]">
-                          {item.created_at ? new Date(item.created_at).toLocaleDateString() : "Active"}
+                          {item.created_at ? new Date(item.created_at).toLocaleString() : "Active"}
                         </span>
                       </div>
                     </motion.div>
@@ -688,10 +888,10 @@ export default function MemoryPage() {
           <div className="space-y-4">
             <div className="p-3.5 rounded-lg bg-primary/10 border border-primary/30">
               <div className="flex items-center gap-2 text-xs font-semibold text-primary mb-1">
-                <Brain className="size-4" /> Memory Item
+                <Brain className="size-4" /> Memory Record
               </div>
               <p className="text-sm font-medium text-foreground">{selectedWhyItem.title}</p>
-              <p className="text-xs text-muted-foreground mt-1">{selectedWhyItem.content}</p>
+              <p className="text-xs text-muted-foreground mt-1 line-clamp-3">{selectedWhyItem.content}</p>
             </div>
 
             <div className="space-y-2">
@@ -708,7 +908,7 @@ export default function MemoryPage() {
                 <div className="grid grid-cols-2 gap-2">
                   <div className="p-2.5 rounded-md bg-muted/30 border border-border/40">
                     <span className="text-muted-foreground block text-[11px]">Originating Source:</span>
-                    <span className="font-medium text-foreground">{selectedWhyItem.provenance?.origin || "Provenance unavailable"}</span>
+                    <span className="font-medium text-foreground truncate block">{selectedWhyItem.provenance?.origin || "Provenance unavailable"}</span>
                   </div>
                   <div className="p-2.5 rounded-md bg-muted/30 border border-border/40">
                     <span className="text-muted-foreground block text-[11px]">Verification State:</span>
@@ -726,6 +926,13 @@ export default function MemoryPage() {
                     <span className="text-foreground font-semibold">{selectedWhyItem.lifecycle}</span>
                   </div>
                 </div>
+
+                {selectedWhyItem.created_at && (
+                  <div className="p-2.5 rounded-md bg-muted/30 border border-border/40">
+                    <span className="text-muted-foreground block text-[11px]">Timestamp:</span>
+                    <span className="font-mono text-foreground">{new Date(selectedWhyItem.created_at).toLocaleString()}</span>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -750,16 +957,55 @@ export default function MemoryPage() {
         </Modal>
       )}
 
+      {/* Reset Buffer Confirmation Modal */}
+      {showResetConfirmModal && (
+        <Modal
+          open={showResetConfirmModal}
+          onClose={() => setShowResetConfirmModal(false)}
+          title="Reset Active Conversational Session?"
+        >
+          <div className="space-y-4">
+            <div className="p-3.5 rounded-lg bg-danger/10 border border-danger/30 text-xs text-foreground space-y-2">
+              <div className="flex items-center gap-2 font-semibold text-danger">
+                <AlertCircle className="size-4" />
+                Destructive Session Action
+              </div>
+              <p className="leading-relaxed">
+                This will clear the active conversational session turns and reset the turn buffer to 0.
+              </p>
+              <div className="text-muted-foreground text-[11px] pt-1">
+                <strong>Preservation Guarantee:</strong> This action will <em>NOT</em> delete organizational Stage-0 axioms, global knowledge documents, user preferences, security scans, or other users' sessions.
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-border/40">
+              <Button variant="outline" onClick={() => setShowResetConfirmModal(false)} disabled={isClearing}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                onClick={handleConfirmResetSession}
+                isLoading={isClearing}
+                className="gap-1.5 bg-danger hover:bg-danger/90 text-white"
+              >
+                <Trash2 className="size-4" />
+                Confirm Reset Session
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
       {/* Layer 3 User Preferences Modal */}
       {showPrefModal && (
         <Modal
           open={showPrefModal}
           onClose={() => setShowPrefModal(false)}
-          title="Layer 3: User Preference Memory Configuration"
+          title="Configure Layer 3 User Preferences"
         >
           <div className="space-y-4">
             <p className="text-xs text-muted-foreground">
-              These preferences persist independently of conversation messages in PostgreSQL and survive logout/login and container restarts.
+              These preferences persist independently of conversation turns in PostgreSQL and survive logouts and service restarts.
             </p>
 
             <div className="space-y-3">
@@ -770,7 +1016,7 @@ export default function MemoryPage() {
                   value={preferences.department || ""}
                   onChange={(e) => setPreferences({ ...preferences, department: e.target.value })}
                   className="w-full text-xs px-3 py-2 rounded-md bg-muted/30 border border-border/60 text-foreground focus:outline-none focus:border-primary"
-                  placeholder="e.g. Security Architecture, Risk Management"
+                  placeholder="e.g. Security Architecture & Engineering"
                 />
               </div>
 
@@ -792,7 +1038,7 @@ export default function MemoryPage() {
                   value={preferences.tone || ""}
                   onChange={(e) => setPreferences({ ...preferences, tone: e.target.value })}
                   className="w-full text-xs px-3 py-2 rounded-md bg-muted/30 border border-border/60 text-foreground focus:outline-none focus:border-primary"
-                  placeholder="e.g. Executive Technical Synthesis, Concise Bullet Points"
+                  placeholder="e.g. Executive Technical Synthesis"
                 />
               </div>
 
@@ -809,7 +1055,7 @@ export default function MemoryPage() {
             </div>
 
             <div className="flex justify-end gap-2 pt-2 border-t border-border/40">
-              <Button variant="outline" onClick={() => setShowPrefModal(false)}>
+              <Button variant="outline" onClick={() => setShowPrefModal(false)} disabled={isSavingPref}>
                 Cancel
               </Button>
               <Button
@@ -818,7 +1064,7 @@ export default function MemoryPage() {
                 isLoading={isSavingPref}
                 className="gap-1.5"
               >
-                Save Preferences
+                <Check className="size-4" /> Save Preferences
               </Button>
             </div>
           </div>

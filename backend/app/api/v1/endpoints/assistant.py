@@ -78,9 +78,36 @@ async def get_memory_layer_items(
     layer_id: str,
     current_user: Annotated[User, Depends(require_permission(Permission.KNOWLEDGE_READ))],
     db: Annotated[AsyncSession, Depends(get_db)],
+    session_id: Optional[uuid.UUID] = None,
 ):
     """Inspect real items, provenance metadata, lifecycle, and 'why' for a memory layer."""
-    return await memory_service.get_layer_items(db, current_user.id, layer_id)
+    return await memory_service.get_layer_items(db, current_user.id, layer_id, session_id=session_id)
+
+
+@router.post("/assistant/sessions/{session_id}/reset")
+@router.post("/memory/sessions/{session_id}/reset")
+async def reset_session_buffer(
+    session_id: uuid.UUID,
+    current_user: Annotated[User, Depends(require_permission(Permission.KNOWLEDGE_READ))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Authoritatively reset conversational turns for the specified session without deleting axioms or other users' data."""
+    res = await memory_service.reset_session_turns(db, current_user.id, session_id)
+    if res.get("status") == "error":
+        raise HTTPException(status_code=404, detail=res.get("message", "Session not found or unauthorized."))
+    return res
+
+
+@router.post("/memory/sessions/reset")
+async def reset_active_session_buffer(
+    current_user: Annotated[User, Depends(require_permission(Permission.KNOWLEDGE_READ))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Authoritatively reset conversational turns for the active session without deleting axioms or other users' data."""
+    res = await memory_service.reset_session_turns(db, current_user.id, None)
+    if res.get("status") == "error":
+        raise HTTPException(status_code=404, detail=res.get("message", "No active session found."))
+    return res
 
 
 @router.get("/memory/preferences")

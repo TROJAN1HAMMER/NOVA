@@ -617,3 +617,158 @@ class TestArchitectureIntelligenceUnit:
         finally:
             app.dependency_overrides.pop(get_current_active_user, None)
             app.dependency_overrides.pop(get_db, None)
+
+    def test_27_blast_radius_impact_chain_and_empty_state(self, temp_repo):
+        """Verifies blast radius impact chain, path metadata, and empty downstream state."""
+        disc_service = ComponentDiscoveryService()
+        dep_service = DependencyExtractorService()
+        blast_engine = BlastRadiusEngine()
+
+        comps = disc_service.discover_components(str(temp_repo))
+        deps = dep_service.extract_dependencies(comps, str(temp_repo))
+
+        target_comp = next((c for c in comps if c.name == "AuthService" or "auth.service" in c.component_id), comps[0])
+        report = blast_engine.compute_blast_radius(
+            target_component_id=target_comp.component_id,
+            components=comps,
+            dependencies=deps,
+        )
+
+        assert report.target_component_id == target_comp.component_id
+        if report.direct_dependents:
+            first_direct = report.direct_dependents[0]
+            assert "relationship" in first_direct
+            assert first_direct["relationship"] == "Direct dependent"
+            assert first_direct["hop_depth"] == 1
+            assert "path" in first_direct
+
+        if report.transitive_dependents:
+            for dep in report.transitive_dependents:
+                assert "hop_depth" in dep
+                assert dep["hop_depth"] >= 1
+                assert "relationship" in dep
+                assert "path" in dep
+
+        # Isolated component with no callers
+        isolated_comp = DiscoveredComponent(
+            component_id="CMP-ISOLATED-LEAF",
+            name="IsolatedLeaf",
+            component_type="MODULE",
+            file_path="isolated.py",
+        )
+        empty_report = blast_engine.compute_blast_radius(
+            target_component_id="CMP-ISOLATED-LEAF",
+            components=comps + [isolated_comp],
+            dependencies=deps,
+        )
+        assert empty_report.direct_dependents_count == 0
+        assert empty_report.transitive_dependents_count == 0
+        assert empty_report.max_impact_depth == 0
+        assert empty_report.risk_level == "LOW"
+
+    def test_28_blast_radius_endpoint_with_slashed_component_id(self, temp_repo):
+        """Verifies that component IDs with slashes match the /{scan_id}/impact/{component_id:path} route without 404."""
+        from fastapi.testclient import TestClient
+        from app.main import app
+        from app.auth.dependencies import get_current_active_user
+        from app.db.session import get_db
+
+        test_user = User(
+            id=uuid.uuid4(),
+            email="developer@nova.example",
+            role=UserRole.DEVELOPER,
+            is_active=True,
+            auth_provider=AuthProvider.LOCAL,
+        )
+
+        app.dependency_overrides[get_current_active_user] = lambda: test_user
+        app.dependency_overrides[get_db] = lambda: None
+        try:
+            client = TestClient(app)
+            test_scan_id = "test-scan-uuid-1234"
+            # Component ID with forward slash (e.g. npm package or nested path)
+            slashed_comp_id = "CMP-EXT-@tailwindcss/postcss"
+            res = client.get(f"/api/v1/architecture/{test_scan_id}/impact/{slashed_comp_id}")
+            assert res.status_code == 200
+            body = res.json()
+            assert body["scan_id"] == test_scan_id
+            assert body["target_component_id"] == slashed_comp_id
+            assert "direct_dependents" in body
+            assert "transitive_dependents" in body
+        finally:
+            app.dependency_overrides.pop(get_current_active_user, None)
+            app.dependency_overrides.pop(get_db, None)
+
+    def test_29_remediation_simulator_topology_delta_and_disclaimer(self, temp_repo):
+        """Verifies remediation simulator produces valid estimate, topology counts, and disclaimer."""
+        from fastapi.testclient import TestClient
+        from app.main import app
+        from app.auth.dependencies import get_current_active_user
+        from app.db.session import get_db
+
+        test_user = User(
+            id=uuid.uuid4(),
+            email="developer@nova.example",
+            role=UserRole.DEVELOPER,
+            is_active=True,
+            auth_provider=AuthProvider.LOCAL,
+        )
+
+        app.dependency_overrides[get_current_active_user] = lambda: test_user
+        app.dependency_overrides[get_db] = lambda: None
+        try:
+            client = TestClient(app)
+            test_scan_id = "test-scan-uuid-1234"
+            payload = {
+                "component_id": "CMP-TEST-AUTH",
+                "proposed_remediation": "Decouple auth and add RBAC control",
+            }
+            res = client.post(f"/api/v1/architecture/{test_scan_id}/remediation-impact", json=payload)
+            assert res.status_code == 200
+            body = res.json()
+            assert body["scan_id"] == test_scan_id
+            assert body["metric_label"] == "ESTIMATE"
+            assert "ESTIMATE" in body["disclaimer"]
+            assert "target_component_id" in body
+            assert "estimated_posture_delta" in body
+            assert "direct_dependents_count" in body
+            assert "max_impact_depth" in body
+            assert isinstance(body["strengthened_controls"], list)
+            assert isinstance(body["mitigated_risk_scenarios"], list)
+        finally:
+            app.dependency_overrides.pop(get_current_active_user, None)
+            app.dependency_overrides.pop(get_db, None)
+
+    def test_30_scan_isolation_blast_and_remediation(self, temp_repo):
+        """Verifies that blast radius and remediation responses are strictly isolated per scan."""
+        from fastapi.testclient import TestClient
+        from app.main import app
+        from app.auth.dependencies import get_current_active_user
+        from app.db.session import get_db
+
+        test_user = User(
+            id=uuid.uuid4(),
+            email="developer@nova.example",
+            role=UserRole.DEVELOPER,
+            is_active=True,
+            auth_provider=AuthProvider.LOCAL,
+        )
+
+        app.dependency_overrides[get_current_active_user] = lambda: test_user
+        app.dependency_overrides[get_db] = lambda: None
+        try:
+            client = TestClient(app)
+            scan_a = "scan-alpha-1111"
+            scan_b = "scan-beta-2222"
+
+            res_a = client.get(f"/api/v1/architecture/{scan_a}/impact/CMP-AUTH")
+            res_b = client.get(f"/api/v1/architecture/{scan_b}/impact/CMP-AUTH")
+
+            assert res_a.status_code == 200
+            assert res_b.status_code == 200
+            assert res_a.json()["scan_id"] == scan_a
+            assert res_b.json()["scan_id"] == scan_b
+            assert res_a.json()["scan_id"] != res_b.json()["scan_id"]
+        finally:
+            app.dependency_overrides.pop(get_current_active_user, None)
+            app.dependency_overrides.pop(get_db, None)

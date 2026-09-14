@@ -72,11 +72,15 @@ class BlastRadiusEngine:
                 "component_type": c.component_type,
                 "file_path": c.file_path,
                 "relation_type": rel,
+                "relationship": "Direct dependent",
+                "hop_depth": 1,
+                "path": f"{target_name} -> {c.name}",
             })
 
         # 2. Transitive Dependents (BFS Traversal)
         transitive_dependents: List[Dict[str, Any]] = []
         visited: Dict[str, int] = {target_component_id: 0}  # node -> hop depth
+        paths: Dict[str, List[str]] = {target_component_id: [target_name]}
         queue = deque([(target_component_id, 0)])
 
         while queue:
@@ -85,6 +89,8 @@ class BlastRadiusEngine:
                 if neighbor_id not in visited:
                     visited[neighbor_id] = curr_depth + 1
                     c = comp_map.get(neighbor_id)
+                    neighbor_name = c.name if c else neighbor_id
+                    paths[neighbor_id] = paths[curr_id] + [neighbor_name]
                     if c:
                         transitive_dependents.append({
                             "component_id": c.component_id,
@@ -92,6 +98,9 @@ class BlastRadiusEngine:
                             "component_type": c.component_type,
                             "file_path": c.file_path,
                             "hop_depth": curr_depth + 1,
+                            "relationship": "Direct dependent" if curr_depth == 0 else "Transitive dependent",
+                            "path": " -> ".join(paths[neighbor_id]),
+                            "relation_type": rel,
                         })
                     queue.append((neighbor_id, curr_depth + 1))
 

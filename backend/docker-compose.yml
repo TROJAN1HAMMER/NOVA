@@ -123,3 +123,6 @@ services:
 
 volumes:
   nova_postgres_data:
+    name: nova_postgres_data
+  nova_redis_data:
+    name: nova_redis_data

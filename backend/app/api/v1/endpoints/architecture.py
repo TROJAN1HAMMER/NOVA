@@ -317,7 +317,7 @@ async def get_hotspots(
     }
 
 
-@router.get("/{scan_id}/impact/{component_id}", response_model=Dict[str, Any], summary="Compute Blast Radius")
+@router.get("/{scan_id}/impact/{component_id:path}", response_model=Dict[str, Any], summary="Compute Blast Radius")
 async def get_component_blast_radius(
     scan_id: str,
     component_id: str,
@@ -424,6 +424,8 @@ async def estimate_remediation_impact(
         "mitigated_risk_scenarios": rep.mitigated_risk_scenarios,
         "remaining_hotspot_status": rep.remaining_hotspot_status,
         "disclaimer": rep.disclaimer,
+        "direct_dependents_count": rep.direct_dependents_count,
+        "max_impact_depth": rep.max_impact_depth,
     }
 
 

@@ -395,11 +395,24 @@ class ArchitectureIntelligenceOrchestrator:
             )
             for d in analysis["dependencies"]
         ]
+        sec_data = {}
+        try:
+            sec_analysis = security_intelligence_orchestrator.run_full_analysis(target_path, force_refresh=False)
+            sec_data = {
+                "assessments": sec_analysis.get("assessments", []),
+                "controls": sec_analysis.get("controls", []),
+                "scenarios": sec_analysis.get("scenarios", []),
+                "assets": sec_analysis.get("assets", []),
+            }
+        except Exception:
+            pass
+
         return remediation_impact_engine.estimate_remediation_impact(
             component_id=component_id,
             proposed_remediation=proposed_remediation,
             components=comps,
             dependencies=deps,
+            security_data=sec_data,
         )
 
 

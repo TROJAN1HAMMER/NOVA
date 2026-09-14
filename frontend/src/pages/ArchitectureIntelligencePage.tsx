@@ -109,21 +109,51 @@ interface TraceabilityItem {
   provenance: Record<string, any>;
 }
 
+interface BlastRadiusDependent {
+  component_id: string;
+  name: string;
+  component_type: string;
+  file_path: string;
+  hop_depth: number;
+  relationship: string;
+  path: string;
+  relation_type?: string;
+}
+
 interface BlastRadiusData {
+  scan_id?: string;
   target_component_id: string;
   target_component_name: string;
   direct_dependents_count: number;
-  direct_dependents: any[];
+  direct_dependents: BlastRadiusDependent[];
   transitive_dependents_count: number;
-  transitive_dependents: any[];
+  transitive_dependents: BlastRadiusDependent[];
   max_impact_depth: number;
-  affected_endpoints: any[];
-  affected_services: any[];
-  affected_findings: any[];
-  affected_controls: any[];
-  affected_scenarios: any[];
-  affected_assets: any[];
+  affected_endpoints: Array<{ component_id: string; name: string; file_path: string; hop_depth: number }>;
+  affected_services: Array<{ component_id: string; name: string; type: string; file_path: string; hop_depth: number }>;
+  affected_findings: Array<Record<string, any>>;
+  affected_controls: Array<Record<string, any>>;
+  affected_scenarios: Array<Record<string, any>>;
+  affected_assets: Array<Record<string, any>>;
   risk_level: string;
+}
+
+interface RemediationResult {
+  scan_id?: string;
+  target_component_id: string;
+  target_component_name: string;
+  proposed_remediation: string;
+  metric_label: string;
+  estimated_posture_delta: number;
+  affected_components_count: number;
+  affected_components: BlastRadiusDependent[];
+  strengthened_controls: Array<{ control_name: string; scope: string; state?: string }>;
+  mitigated_risk_scenarios: Array<{ scenario_id: string; title: string; severity?: string }>;
+  remaining_hotspot_status: string;
+  disclaimer: string;
+  direct_dependents_count?: number;
+  max_impact_depth?: number;
+  simulated_at?: string;
 }
 
 interface DriftData {
@@ -346,6 +376,8 @@ export default function ArchitectureIntelligencePage() {
   const [selectedBlastComponent, setSelectedBlastComponent] = useState<string>("");
   const [blastData, setBlastData] = useState<BlastRadiusData | null>(null);
   const [blastLoading, setBlastLoading] = useState<boolean>(false);
+  const [blastError, setBlastError] = useState<string | null>(null);
+  const [blastSearchFilter, setBlastSearchFilter] = useState<string>("");
 
   // Drift State
   const [driftData, setDriftData] = useState<DriftData | null>(null);
@@ -354,8 +386,9 @@ export default function ArchitectureIntelligencePage() {
   // Remediation Simulator State
   const [simComponent, setSimComponent] = useState<string>("");
   const [simText, setSimText] = useState<string>("Decouple module and enforce RBAC authorization boundary");
-  const [simResult, setSimResult] = useState<any | null>(null);
+  const [simResult, setSimResult] = useState<RemediationResult | null>(null);
   const [simLoading, setSimLoading] = useState<boolean>(false);
+  const [simError, setSimError] = useState<string | null>(null);
 
   // Graph Canvas Viewport
   const [zoom, setZoom] = useState<number>(0.95);
@@ -406,9 +439,16 @@ export default function ArchitectureIntelligencePage() {
       setData(res.data);
       setExpandedNodeIds(new Set());
       setSelectedNodeId(null);
+      setBlastData(null);
+      setBlastError(null);
+      setSimResult(null);
+      setSimError(null);
       if (res.data.components?.length > 0) {
         setSelectedBlastComponent(res.data.components[0].component_id);
         setSimComponent(res.data.components[0].component_id);
+      } else {
+        setSelectedBlastComponent("");
+        setSimComponent("");
       }
       if (isForceRefresh) {
         setScanSuccessMessage("Architecture snapshot refreshed successfully.");
@@ -469,11 +509,16 @@ export default function ArchitectureIntelligencePage() {
   const fetchBlastRadius = async (compId: string) => {
     if (!compId || !selectedScanId) return;
     setBlastLoading(true);
+    setBlastError(null);
     try {
-      const res = await apiClient.get(`/architecture/${selectedScanId}/impact/${compId}`);
+      const res = await apiClient.get(`/architecture/${selectedScanId}/impact/${encodeURIComponent(compId)}`);
       setBlastData(res.data);
-    } catch {
-      // Graceful fallback
+    } catch (err: any) {
+      setBlastError(
+        err?.response?.data?.detail ||
+        "The dependency relationships for this component could not be loaded."
+      );
+      setBlastData(null);
     } finally {
       setBlastLoading(false);
     }
@@ -495,14 +540,22 @@ export default function ArchitectureIntelligencePage() {
   const handleRunRemediationSim = async () => {
     if (!simComponent || !selectedScanId) return;
     setSimLoading(true);
+    setSimError(null);
     try {
       const res = await apiClient.post(`/architecture/${selectedScanId}/remediation-impact`, {
         component_id: simComponent,
         proposed_remediation: simText,
       });
-      setSimResult(res.data);
-    } catch {
-      // Graceful fallback
+      setSimResult({
+        ...res.data,
+        simulated_at: new Date().toLocaleTimeString(),
+      });
+    } catch (err: any) {
+      setSimError(
+        err?.response?.data?.detail ||
+        "Unable to calculate remediation impact for the selected component."
+      );
+      setSimResult(null);
     } finally {
       setSimLoading(false);
     }
@@ -2131,6 +2184,19 @@ export default function ArchitectureIntelligencePage() {
                           size="sm"
                           className="w-full justify-center text-xs"
                           onClick={() => {
+                            setSimComponent(n.component_id);
+                            setSimResult(null);
+                            setActiveTab("remediation");
+                          }}
+                        >
+                          <Sparkles className="size-3.5 mr-1.5" />
+                          Simulate Remediation
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full justify-center text-xs"
+                          onClick={() => {
                             setActiveTab("traceability");
                           }}
                         >
@@ -2460,44 +2526,130 @@ export default function ArchitectureIntelligencePage() {
       {/* ========================================================================= */}
       {!loading && activeTab === "blast" && (
         <div className="space-y-4">
+          {/* Target Component Selector & Filter Card */}
           <Card className="border-border/60 bg-card/70">
             <CardHeader className="pb-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h3 className="font-semibold text-foreground flex items-center gap-2">
                     <Crosshair className="size-4 text-primary" />
-                    Component Blast Radius & Impact Analyzer
+                    Component Blast Radius & Downstream Impact Analyzer
                   </h3>
-                  <p className="text-xs text-muted-foreground">
-                    This shows which components, endpoints, controls, and risks may be affected if this component changes.
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Select a component from the active scan to trace reverse reachability, dependency depth, callers, and correlated security controls.
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="relative">
+                    <Search className="size-3.5 absolute left-2.5 top-2.5 text-muted-foreground" />
+                    <input
+                      type="text"
+                      placeholder="Filter components..."
+                      value={blastSearchFilter}
+                      onChange={(e) => setBlastSearchFilter(e.target.value)}
+                      className="h-9 pl-8 pr-3 rounded-lg border border-border/80 bg-background text-xs text-foreground focus:outline-none focus:border-primary w-40"
+                    />
+                  </div>
                   <select
                     value={selectedBlastComponent}
-                    onChange={(e) => setSelectedBlastComponent(e.target.value)}
+                    onChange={(e) => {
+                      const newId = e.target.value;
+                      setSelectedBlastComponent(newId);
+                      setBlastData(null);
+                      setBlastError(null);
+                      fetchBlastRadius(newId);
+                    }}
                     className="h-9 px-3 rounded-lg border border-border/80 bg-background text-xs text-foreground focus:outline-none focus:border-primary max-w-xs"
                   >
-                    {components.map((c) => (
-                      <option key={c.component_id} value={c.component_id}>
-                        {c.name} ({c.component_type})
-                      </option>
-                    ))}
+                    {components
+                      .filter((c) => {
+                        if (!blastSearchFilter.trim()) return true;
+                        const q = blastSearchFilter.toLowerCase();
+                        return (
+                          c.name.toLowerCase().includes(q) ||
+                          c.component_type.toLowerCase().includes(q) ||
+                          c.file_path.toLowerCase().includes(q)
+                        );
+                      })
+                      .map((c) => (
+                        <option key={c.component_id} value={c.component_id}>
+                          {c.name} ({c.component_type})
+                        </option>
+                      ))}
                   </select>
                   <Button
                     variant="primary"
                     size="sm"
                     onClick={() => fetchBlastRadius(selectedBlastComponent)}
-                    disabled={blastLoading}
+                    disabled={blastLoading || !selectedBlastComponent}
                   >
-                    {blastLoading ? "Calculating..." : "Compute Blast Radius"}
+                    {blastLoading ? (
+                      <>
+                        <Spinner className="size-3.5 mr-1.5" />
+                        Calculating...
+                      </>
+                    ) : (
+                      <>
+                        <Crosshair className="size-3.5 mr-1.5" />
+                        Compute Blast Radius
+                      </>
+                    )}
                   </Button>
+                  {selectedBlastComponent && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSimComponent(selectedBlastComponent);
+                        setSimResult(null);
+                        setActiveTab("remediation");
+                      }}
+                      className="text-xs"
+                    >
+                      <Sparkles className="size-3.5 mr-1.5" />
+                      Simulate Remediation
+                    </Button>
+                  )}
                 </div>
               </div>
             </CardHeader>
           </Card>
 
-          {blastData && (
+          {/* Loading State */}
+          {blastLoading && (
+            <Card className="border-border/60 bg-card/60 p-10 text-center space-y-3">
+              <Spinner className="size-6 mx-auto text-primary" />
+              <div className="text-sm font-semibold text-foreground">Calculating blast radius...</div>
+              <div className="text-xs text-muted-foreground max-w-md mx-auto">
+                Traversing reverse dependency reachability, transitive callers, and security associations for the selected component...
+              </div>
+            </Card>
+          )}
+
+          {/* Error State with Retry */}
+          {!blastLoading && blastError && (
+            <Card className="border-rose-500/40 bg-rose-500/5 p-8 text-center space-y-3">
+              <AlertTriangle className="size-8 mx-auto text-rose-400" />
+              <div className="text-sm font-semibold text-rose-300">Unable to calculate blast radius</div>
+              <div className="text-xs text-muted-foreground max-w-md mx-auto">
+                {blastError}
+              </div>
+              <div className="pt-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fetchBlastRadius(selectedBlastComponent)}
+                  className="text-xs"
+                >
+                  <RefreshCw className="size-3.5 mr-1.5" />
+                  Retry
+                </Button>
+              </div>
+            </Card>
+          )}
+
+          {/* Blast Radius Results */}
+          {!blastLoading && !blastError && blastData && (
             <div className="space-y-4">
               {/* KPI Cards */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -2560,88 +2712,336 @@ export default function ArchitectureIntelligencePage() {
                 </Card>
               </div>
 
-              {/* Visual Flow Diagram */}
-              <Card className="border-border/60 bg-card/70 p-4">
-                <div className="text-xs font-semibold text-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
-                  <GitMerge className="size-4 text-primary" />
-                  Impact Reachability Chain
-                </div>
-                <div className="flex flex-wrap items-center gap-3 text-xs">
-                  <div className="p-2.5 rounded-xl bg-primary/20 border border-primary/40 text-primary font-bold">
-                    Target: {blastData.target_component_name}
+              {/* Empty Downstream State (STEP 6) */}
+              {blastData.direct_dependents_count === 0 && blastData.transitive_dependents_count === 0 ? (
+                <Card className="border-border/60 bg-card/70 p-8 text-center space-y-3">
+                  <CheckCircle2 className="size-8 mx-auto text-emerald-400" />
+                  <div className="text-sm font-semibold text-foreground">No downstream impact detected</div>
+                  <div className="text-xs text-muted-foreground max-w-md mx-auto leading-relaxed">
+                    This component does not currently have reachable dependents in the selected architecture graph.
                   </div>
-                  <ArrowRight className="size-4 text-muted-foreground" />
-                  <div className="p-2.5 rounded-xl bg-background/60 border border-border/50 text-foreground">
-                    1-Hop Direct ({blastData.direct_dependents_count})
+                  <div className="text-[11px] text-muted-foreground max-w-md mx-auto">
+                    Because this component has no incoming callers in the current AST snapshot, changes or refactorings are locally contained.
                   </div>
-                  <ArrowRight className="size-4 text-muted-foreground" />
-                  <div className="p-2.5 rounded-xl bg-background/60 border border-border/50 text-foreground">
-                    Transitive Closure ({blastData.transitive_dependents_count})
+                  <div className="pt-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSimComponent(blastData.target_component_id);
+                        setSimResult(null);
+                        setActiveTab("remediation");
+                      }}
+                      className="text-xs"
+                    >
+                      <Sparkles className="size-3.5 mr-1.5" />
+                      Simulate Remediation
+                    </Button>
                   </div>
-                  <ArrowRight className="size-4 text-muted-foreground" />
-                  <div className="p-2.5 rounded-xl bg-background/60 border border-border/50 text-cyan-400 font-semibold">
-                    Affected Services ({blastData.affected_services.length}) & Endpoints ({blastData.affected_endpoints.length})
-                  </div>
-                </div>
-              </Card>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Card className="border-border/60 bg-card/70">
-                  <CardHeader className="pb-3">
-                    <h4 className="font-semibold text-sm text-foreground">Affected Endpoints & Services</h4>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    {blastData.affected_endpoints.length > 0 || blastData.affected_services.length > 0 ? (
-                      <>
-                        {blastData.affected_endpoints.map((ep, i) => (
-                          <div key={i} className="flex items-center gap-2 text-xs p-2 rounded bg-background/50 border border-border/40">
-                            <Badge tone="primary">ENDPOINT</Badge>
-                            <span className="font-mono text-foreground">{ep}</span>
-                          </div>
-                        ))}
-                        {blastData.affected_services.map((svc, i) => (
-                          <div key={i} className="flex items-center gap-2 text-xs p-2 rounded bg-background/50 border border-border/40">
-                            <Badge tone="neutral">SERVICE</Badge>
-                            <span className="font-mono text-foreground">{svc}</span>
-                          </div>
-                        ))}
-                      </>
-                    ) : (
-                      <div className="text-xs text-muted-foreground py-4 text-center">
-                        No downstream endpoints or services are reachable from this component.
-                      </div>
-                    )}
-                  </CardContent>
                 </Card>
-
-                <Card className="border-border/60 bg-card/70">
-                  <CardHeader className="pb-3">
-                    <h4 className="font-semibold text-sm text-foreground">Correlated Security Controls & Risks</h4>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    {blastData.affected_controls.length > 0 || blastData.affected_scenarios.length > 0 ? (
-                      <>
-                        {blastData.affected_controls.map((ctrl, i) => (
-                          <div key={i} className="flex items-center gap-2 text-xs p-2 rounded bg-background/50 border border-border/40">
-                            <Badge tone="warning">CONTROL</Badge>
-                            <span className="text-foreground">{ctrl}</span>
-                          </div>
-                        ))}
-                        {blastData.affected_scenarios.map((sc, i) => (
-                          <div key={i} className="flex items-center gap-2 text-xs p-2 rounded bg-background/50 border border-border/40">
-                            <Badge tone="danger">RISK</Badge>
-                            <span className="text-foreground">{sc}</span>
-                          </div>
-                        ))}
-                      </>
-                    ) : (
-                      <div className="text-xs text-muted-foreground py-4 text-center">
-                        No security controls or risk scenarios are affected by this component.
+              ) : (
+                <>
+                  {/* IMPACT PATH SUMMARY (STEP 4) */}
+                  <Card className="border-border/60 bg-card/70 p-4">
+                    <div className="text-xs font-semibold text-foreground uppercase tracking-wider mb-3 flex items-center justify-between">
+                      <span className="flex items-center gap-2">
+                        <Crosshair className="size-4 text-primary" />
+                        IMPACT PATH
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setSimComponent(blastData.target_component_id);
+                          setSimResult(null);
+                          setActiveTab("remediation");
+                        }}
+                        className="text-xs h-7"
+                      >
+                        <Sparkles className="size-3 mr-1 text-primary" />
+                        Simulate Remediation for this Component
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                      <div className="p-3 rounded-xl bg-background/60 border border-border/50">
+                        <div className="text-muted-foreground text-[11px]">Target Component</div>
+                        <div className="font-bold text-foreground truncate mt-0.5" title={blastData.target_component_name}>
+                          {blastData.target_component_name}
+                        </div>
+                        <div className="text-[10px] text-primary font-mono truncate">{blastData.target_component_id}</div>
                       </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
+                      <div className="p-3 rounded-xl bg-background/60 border border-border/50">
+                        <div className="text-muted-foreground text-[11px]">Direct Dependents</div>
+                        <div className="font-bold text-foreground mt-0.5">{blastData.direct_dependents_count} immediate callers</div>
+                        <div className="text-[10px] text-muted-foreground">1-hop reverse dependencies</div>
+                      </div>
+                      <div className="p-3 rounded-xl bg-background/60 border border-border/50">
+                        <div className="text-muted-foreground text-[11px]">Reachable Dependents</div>
+                        <div className="font-bold text-cyan-400 mt-0.5">{blastData.transitive_dependents_count} downstream closure</div>
+                        <div className="text-[10px] text-muted-foreground">Total transitive reachable callers</div>
+                      </div>
+                      <div className="p-3 rounded-xl bg-background/60 border border-border/50">
+                        <div className="text-muted-foreground text-[11px]">Maximum Dependency Depth</div>
+                        <div className="font-bold text-foreground mt-0.5">{blastData.max_impact_depth} hops deep</div>
+                        <div className="text-[10px] text-muted-foreground">Longest ripple cascade path</div>
+                      </div>
+                    </div>
+                  </Card>
+
+                  {/* Impact Reachability Chain (STEP 3) */}
+                  <Card className="border-border/60 bg-card/70 p-4 space-y-3">
+                    <div className="text-xs font-semibold text-foreground uppercase tracking-wider flex items-center gap-2">
+                      <GitMerge className="size-4 text-primary" />
+                      Impact Reachability Chain
+                    </div>
+                    <div className="p-4 rounded-xl bg-background/40 border border-border/40 space-y-4">
+                      {/* Target Node */}
+                      <div className="flex items-center gap-3">
+                        <div className="px-3 py-1.5 rounded-lg bg-primary/20 border border-primary/50 text-primary font-bold text-xs flex items-center gap-2">
+                          <span className="size-2 rounded-full bg-primary animate-pulse" />
+                          TARGET: {blastData.target_component_name}
+                        </div>
+                        <span className="text-xs text-muted-foreground font-mono text-[11px] truncate">
+                          {components.find((c) => c.component_id === blastData.target_component_id)?.file_path}
+                        </span>
+                      </div>
+
+                      {/* Tree Flow */}
+                      <div className="pl-6 border-l-2 border-dashed border-primary/40 ml-4 space-y-4">
+                        {/* Direct Callers */}
+                        <div className="space-y-1.5">
+                          <div className="text-[11px] font-semibold text-foreground flex items-center gap-2">
+                            <span className="size-1.5 rounded-full bg-amber-400" />
+                            DIRECT DEPENDENTS ({blastData.direct_dependents_count} components, 1 hop)
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {blastData.direct_dependents.slice(0, 8).map((dep) => (
+                              <button
+                                key={dep.component_id}
+                                onClick={() => {
+                                  setSelectedBlastComponent(dep.component_id);
+                                  setBlastData(null);
+                                  setBlastError(null);
+                                  fetchBlastRadius(dep.component_id);
+                                }}
+                                className="px-2.5 py-1 rounded-md bg-card/80 border border-border/60 text-[11px] hover:border-primary/60 hover:text-primary transition-colors text-foreground flex items-center gap-1.5"
+                                title={`Click to analyze blast radius for ${dep.name}`}
+                              >
+                                <span className="font-medium">{dep.name}</span>
+                                <Badge tone="neutral" className="text-[9px] py-0 px-1">
+                                  {dep.component_type}
+                                </Badge>
+                              </button>
+                            ))}
+                            {blastData.direct_dependents.length > 8 && (
+                              <span className="text-[11px] text-muted-foreground self-center">
+                                +{blastData.direct_dependents.length - 8} more
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Transitive Callers (hops > 1) */}
+                        {blastData.transitive_dependents.filter((d) => d.hop_depth > 1).length > 0 && (
+                          <div className="space-y-1.5">
+                            <div className="text-[11px] font-semibold text-foreground flex items-center gap-2">
+                              <span className="size-1.5 rounded-full bg-cyan-400" />
+                              TRANSITIVE DEPENDENTS ({blastData.transitive_dependents.filter((d) => d.hop_depth > 1).length} components, 2+ hops)
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {blastData.transitive_dependents
+                                .filter((d) => d.hop_depth > 1)
+                                .slice(0, 8)
+                                .map((dep) => (
+                                  <button
+                                    key={dep.component_id}
+                                    onClick={() => {
+                                      setSelectedBlastComponent(dep.component_id);
+                                      setBlastData(null);
+                                      setBlastError(null);
+                                      fetchBlastRadius(dep.component_id);
+                                    }}
+                                    className="px-2.5 py-1 rounded-md bg-card/80 border border-border/60 text-[11px] hover:border-primary/60 hover:text-primary transition-colors text-foreground flex items-center gap-1.5"
+                                    title={`Click to analyze blast radius for ${dep.name}`}
+                                  >
+                                    <span className="font-medium">{dep.name}</span>
+                                    <span className="text-[9px] text-muted-foreground">({dep.hop_depth} hops)</span>
+                                  </button>
+                                ))}
+                              {blastData.transitive_dependents.filter((d) => d.hop_depth > 1).length > 8 && (
+                                <span className="text-[11px] text-muted-foreground self-center">
+                                  +{blastData.transitive_dependents.filter((d) => d.hop_depth > 1).length - 8} more
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Reachable Impact Entities */}
+                        <div className="space-y-1.5">
+                          <div className="text-[11px] font-semibold text-foreground flex items-center gap-2">
+                            <span className="size-1.5 rounded-full bg-purple-400" />
+                            REACHABLE IMPACT ({blastData.affected_endpoints.length} Endpoints, {blastData.affected_services.length} Services)
+                          </div>
+                          <div className="text-[11px] text-muted-foreground">
+                            {blastData.affected_endpoints.length === 0 && blastData.affected_services.length === 0
+                              ? "No external endpoints or services directly in this cascade."
+                              : "Cascade reaches the public endpoints and service boundaries listed below."}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </Card>
+
+                  {/* Component Breakdown Table (STEP 5) */}
+                  <Card className="border-border/60 bg-card/70">
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-semibold text-sm text-foreground flex items-center gap-2">
+                          <Layers className="size-4 text-primary" />
+                          Reachable Component Closure ({blastData.transitive_dependents.length})
+                        </h4>
+                        <span className="text-[11px] text-muted-foreground">
+                          Click any component to make it the new target or simulate remediation
+                        </span>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="p-0 overflow-x-auto">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="border-y border-border/60 bg-muted/30 text-muted-foreground font-semibold">
+                            <th className="py-2.5 px-4">Component</th>
+                            <th className="py-2.5 px-3">Relationship</th>
+                            <th className="py-2.5 px-3">Hop</th>
+                            <th className="py-2.5 px-4">Impact Path</th>
+                            <th className="py-2.5 px-4 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border/40">
+                          {blastData.transitive_dependents.map((dep) => (
+                            <tr key={dep.component_id} className="hover:bg-muted/20 transition-colors">
+                              <td className="py-2.5 px-4">
+                                <div className="font-semibold text-foreground">{dep.name}</div>
+                                <div className="text-[10px] text-muted-foreground font-mono truncate max-w-[200px]">
+                                  {dep.file_path}
+                                </div>
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <Badge
+                                  tone={dep.hop_depth === 1 ? "warning" : "neutral"}
+                                  className="text-[10px]"
+                                >
+                                  {dep.relationship || (dep.hop_depth === 1 ? "Direct dependent" : "Transitive dependent")}
+                                </Badge>
+                              </td>
+                              <td className="py-2.5 px-3 font-semibold text-foreground">
+                                {dep.hop_depth} {dep.hop_depth === 1 ? "hop" : "hops"}
+                              </td>
+                              <td className="py-2.5 px-4 font-mono text-[11px] text-muted-foreground max-w-xs truncate" title={dep.path}>
+                                {dep.path || `${blastData.target_component_name} -> ${dep.name}`}
+                              </td>
+                              <td className="py-2.5 px-4 text-right space-x-2">
+                                <button
+                                  onClick={() => {
+                                    setSelectedBlastComponent(dep.component_id);
+                                    setBlastData(null);
+                                    setBlastError(null);
+                                    fetchBlastRadius(dep.component_id);
+                                  }}
+                                  className="px-2 py-1 rounded bg-background border border-border/60 text-[11px] text-foreground hover:border-primary hover:text-primary transition-colors"
+                                >
+                                  Target this
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setSimComponent(dep.component_id);
+                                    setSimResult(null);
+                                    setActiveTab("remediation");
+                                  }}
+                                  className="px-2 py-1 rounded bg-primary/10 border border-primary/30 text-[11px] text-primary hover:bg-primary/20 transition-colors"
+                                >
+                                  Simulate fix
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </CardContent>
+                  </Card>
+
+                  {/* Downstream Structural Entities & Security Correlations */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Card className="border-border/60 bg-card/70">
+                      <CardHeader className="pb-3">
+                        <h4 className="font-semibold text-sm text-foreground">Affected Endpoints & Services</h4>
+                      </CardHeader>
+                      <CardContent className="space-y-2">
+                        {blastData.affected_endpoints.length > 0 || blastData.affected_services.length > 0 ? (
+                          <>
+                            {blastData.affected_endpoints.map((ep, i) => (
+                              <div key={i} className="flex items-center justify-between text-xs p-2 rounded bg-background/50 border border-border/40">
+                                <div className="flex items-center gap-2">
+                                  <Badge tone="primary">ENDPOINT</Badge>
+                                  <span className="font-mono text-foreground font-semibold">{ep.name || ep.component_id}</span>
+                                </div>
+                                <span className="text-[10px] text-muted-foreground">{ep.hop_depth} hops</span>
+                              </div>
+                            ))}
+                            {blastData.affected_services.map((svc, i) => (
+                              <div key={i} className="flex items-center justify-between text-xs p-2 rounded bg-background/50 border border-border/40">
+                                <div className="flex items-center gap-2">
+                                  <Badge tone="neutral">SERVICE</Badge>
+                                  <span className="font-mono text-foreground font-semibold">{svc.name || svc.component_id}</span>
+                                </div>
+                                <span className="text-[10px] text-muted-foreground">{svc.hop_depth} hops</span>
+                              </div>
+                            ))}
+                          </>
+                        ) : (
+                          <div className="text-xs text-muted-foreground py-4 text-center">
+                            No downstream endpoints or services are reachable from this component.
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+
+                    <Card className="border-border/60 bg-card/70">
+                      <CardHeader className="pb-3">
+                        <h4 className="font-semibold text-sm text-foreground">Correlated Security Controls & Risks</h4>
+                      </CardHeader>
+                      <CardContent className="space-y-2">
+                        {blastData.affected_controls.length > 0 || blastData.affected_scenarios.length > 0 ? (
+                          <>
+                            {blastData.affected_controls.map((ctrl, i) => (
+                              <div key={i} className="flex items-center justify-between text-xs p-2 rounded bg-background/50 border border-border/40">
+                                <div className="flex items-center gap-2">
+                                  <Badge tone="warning">CONTROL</Badge>
+                                  <span className="text-foreground font-medium">{ctrl.control_name || ctrl.control_id || "Security Control"}</span>
+                                </div>
+                                <span className="text-[10px] text-muted-foreground font-mono">{ctrl.scope || "repo"}</span>
+                              </div>
+                            ))}
+                            {blastData.affected_scenarios.map((sc, i) => (
+                              <div key={i} className="flex items-center justify-between text-xs p-2 rounded bg-background/50 border border-border/40">
+                                <div className="flex items-center gap-2">
+                                  <Badge tone="danger">RISK</Badge>
+                                  <span className="text-foreground font-medium">{sc.title || sc.scenario_id || "Risk Scenario"}</span>
+                                </div>
+                                <span className="text-[10px] text-danger font-semibold">{sc.severity || "HIGH"}</span>
+                              </div>
+                            ))}
+                          </>
+                        ) : (
+                          <div className="text-xs text-muted-foreground py-4 text-center">
+                            Security impact: No linked security relationships in this simulation.
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -2857,45 +3257,104 @@ export default function ArchitectureIntelligencePage() {
       {!loading && activeTab === "remediation" && (
         <Card className="border-border/60 bg-card/70">
           <CardHeader className="pb-3">
-            <h3 className="font-semibold text-foreground flex items-center gap-2">
-              <Sparkles className="size-4 text-primary" />
-              Remediation Impact Simulator (ESTIMATE)
-            </h3>
-            <p className="text-xs text-muted-foreground">
-              Simulate the ripple benefit and posture delta of architectural decoupling or security fixes.
-            </p>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="font-semibold text-foreground flex items-center gap-2">
+                  <Sparkles className="size-4 text-primary" />
+                  Remediation Impact Simulator (ESTIMATE)
+                </h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Simulate the ripple benefit and posture delta of architectural decoupling or security fixes based on dependency graph topology.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                {simComponent && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setSelectedBlastComponent(simComponent);
+                      setBlastData(null);
+                      setBlastError(null);
+                      setActiveTab("blast");
+                    }}
+                    className="text-xs"
+                  >
+                    <Crosshair className="size-3.5 mr-1.5" />
+                    View in Blast Radius
+                  </Button>
+                )}
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* Prominent Disclaimer */}
+            {/* Prominent Mandatory Disclaimer (STEP 16) */}
             <div className="p-3 rounded-xl border border-primary/30 bg-primary/5 text-xs text-primary/90 flex items-start gap-2.5">
               <Info className="size-4 shrink-0 text-primary mt-0.5" />
               <div className="leading-relaxed">
-                <strong>ESTIMATE ONLY:</strong> This simulation estimates architectural impact from the current dependency graph topology. It does not change the repository code, deployment state, or authoritative security posture.
+                <strong>ESTIMATE ONLY:</strong> This simulation estimates architectural impact from the current dependency graph. It does not modify repository code, deployment state, or authoritative security posture. Simulation is based on dependency-graph topology and reachability.
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Left Column: Form Controls */}
               <div className="space-y-3">
-                <label className="text-xs font-semibold text-foreground">Target Component:</label>
-                <select
-                  value={simComponent}
-                  onChange={(e) => setSimComponent(e.target.value)}
-                  className="w-full h-9 px-3 rounded-lg border border-border/80 bg-background text-xs text-foreground focus:outline-none"
-                >
-                  {components.map((c) => (
-                    <option key={c.component_id} value={c.component_id}>
-                      {c.name} ({c.component_type})
-                    </option>
-                  ))}
-                </select>
+                <div>
+                  <label className="text-xs font-semibold text-foreground block mb-1">Target Component:</label>
+                  <select
+                    value={simComponent}
+                    onChange={(e) => {
+                      const newId = e.target.value;
+                      setSimComponent(newId);
+                      setSimResult(null);
+                      setSimError(null);
+                    }}
+                    className="w-full h-9 px-3 rounded-lg border border-border/80 bg-background text-xs text-foreground focus:outline-none focus:border-primary"
+                  >
+                    {components.map((c) => (
+                      <option key={c.component_id} value={c.component_id}>
+                        {c.name} ({c.component_type})
+                      </option>
+                    ))}
+                  </select>
+                  <div className="text-[11px] text-muted-foreground font-mono mt-1 truncate">
+                    {components.find((c) => c.component_id === simComponent)?.file_path}
+                  </div>
+                </div>
 
-                <label className="text-xs font-semibold text-foreground">Proposed Refactoring / Remediation:</label>
-                <Input
-                  value={simText}
-                  onChange={(e) => setSimText(e.target.value)}
-                  placeholder="e.g. Decouple auth and add RBAC control"
-                  className="text-xs"
-                />
+                <div>
+                  <label className="text-xs font-semibold text-foreground block mb-1">Proposed Refactoring / Remediation:</label>
+                  <Input
+                    value={simText}
+                    onChange={(e) => setSimText(e.target.value)}
+                    placeholder="e.g. Decouple auth and add RBAC control"
+                    className="text-xs"
+                  />
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    <span className="text-[10px] text-muted-foreground self-center">Presets:</span>
+                    <button
+                      type="button"
+                      onClick={() => setSimText("Decouple module and enforce RBAC authorization boundary")}
+                      className="text-[10px] px-2 py-0.5 rounded bg-muted/40 hover:bg-muted/70 text-muted-foreground hover:text-foreground transition-colors border border-border/40"
+                    >
+                      RBAC Boundary
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSimText("Extract interface to break circular dependency cycle")}
+                      className="text-[10px] px-2 py-0.5 rounded bg-muted/40 hover:bg-muted/70 text-muted-foreground hover:text-foreground transition-colors border border-border/40"
+                    >
+                      Break Circular Cycle
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSimText("Isolate database access behind repository boundary")}
+                      className="text-[10px] px-2 py-0.5 rounded bg-muted/40 hover:bg-muted/70 text-muted-foreground hover:text-foreground transition-colors border border-border/40"
+                    >
+                      Repository Boundary
+                    </button>
+                  </div>
+                </div>
 
                 <Button
                   variant="primary"
@@ -2904,42 +3363,169 @@ export default function ArchitectureIntelligencePage() {
                   disabled={simLoading || !simComponent}
                   className="w-full text-xs"
                 >
-                  {simLoading ? "Simulating Impact..." : "Simulate Architectural Benefit"}
+                  {simLoading ? (
+                    <>
+                      <Spinner className="size-3.5 mr-1.5" />
+                      Simulating Impact...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="size-3.5 mr-1.5" />
+                      Simulate Architectural Benefit
+                    </>
+                  )}
                 </Button>
               </div>
 
-              {simResult && (
-                <div className="p-4 rounded-xl border border-primary/30 bg-primary/5 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-sm text-foreground">Estimated Ripple Benefit</span>
-                    <Badge tone="warning" className="text-[10px]">
-                      {simResult.metric_label}
-                    </Badge>
-                  </div>
-                  <div className="text-2xl font-bold text-success">+{simResult.estimated_posture_delta} pts</div>
-                  <div className="text-xs text-muted-foreground space-y-1">
-                    <div>
-                      • Strengthened Controls:{" "}
-                      <span className="text-foreground font-semibold">
-                        {simResult.strengthened_controls.join(", ") || "None"}
-                      </span>
-                    </div>
-                    <div>
-                      • Mitigated Scenarios:{" "}
-                      <span className="text-foreground font-semibold">
-                        {simResult.mitigated_risk_scenarios.join(", ") || "None"}
-                      </span>
-                    </div>
-                    <div>
-                      • Downstream Components Positively Impacted:{" "}
-                      <span className="text-foreground font-semibold">{simResult.affected_components_count}</span>
+              {/* Right Column: Simulation Result & State Transition */}
+              <div className="space-y-3">
+                {/* Loading State */}
+                {simLoading && (
+                  <div className="p-8 rounded-xl border border-border/60 bg-background/40 text-center space-y-3 h-full flex flex-col items-center justify-center">
+                    <Spinner className="size-6 text-primary" />
+                    <div className="text-xs font-semibold text-foreground">Evaluating remediation impact...</div>
+                    <div className="text-[11px] text-muted-foreground max-w-xs">
+                      Traversing reverse callers and security controls for {components.find((c) => c.component_id === simComponent)?.name || simComponent}...
                     </div>
                   </div>
-                  <div className="text-[11px] text-muted-foreground italic border-t border-border/40 pt-2">
-                    {simResult.disclaimer}
+                )}
+
+                {/* Error State */}
+                {!simLoading && simError && (
+                  <div className="p-6 rounded-xl border border-rose-500/40 bg-rose-500/5 text-center space-y-2.5">
+                    <AlertTriangle className="size-6 mx-auto text-rose-400" />
+                    <div className="text-xs font-semibold text-rose-300">Unable to calculate simulation</div>
+                    <div className="text-[11px] text-muted-foreground">{simError}</div>
+                    <Button variant="outline" size="sm" onClick={handleRunRemediationSim} className="text-xs mt-1">
+                      <RefreshCw className="size-3 mr-1" />
+                      Retry Simulation
+                    </Button>
                   </div>
-                </div>
-              )}
+                )}
+
+                {/* Simulation Completed Result (STEPS 13, 14, 15, 17, 18) */}
+                {!simLoading && !simError && simResult && (
+                  <div className="space-y-3 animate-in fade-in duration-200">
+                    {/* Completion & Scope Metadata Banner (STEP 18) */}
+                    <div className="p-2.5 rounded-xl border border-primary/30 bg-primary/10 flex flex-wrap items-center justify-between gap-2 text-xs">
+                      <div className="flex items-center gap-1.5">
+                        <CheckCircle2 className="size-3.5 text-success shrink-0" />
+                        <span className="font-bold text-foreground">Simulation completed</span>
+                        <span className="text-[11px] text-muted-foreground">({simResult.simulated_at || "just now"})</span>
+                      </div>
+                      <div className="text-[10px] text-muted-foreground flex items-center gap-2">
+                        <span>Target: <strong className="text-foreground">{simResult.target_component_name}</strong></span>
+                        <span>•</span>
+                        <span>Scope: <strong className="text-foreground">{activeScan?.project_name || "Active Scan"}</strong></span>
+                      </div>
+                    </div>
+
+                    {/* Benefit Score Card */}
+                    <div className="p-4 rounded-xl border border-primary/30 bg-primary/5 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-sm text-foreground">Estimated Ripple Benefit</span>
+                        <div className="flex items-center gap-1.5">
+                          <Badge tone="warning" className="text-[10px]">
+                            {simResult.metric_label}
+                          </Badge>
+                          <Badge
+                            tone={simResult.remaining_hotspot_status === "HOTSPOT_RESOLVED" ? "success" : "neutral"}
+                            className="text-[10px]"
+                          >
+                            {simResult.remaining_hotspot_status}
+                          </Badge>
+                        </div>
+                      </div>
+                      <div className="text-2xl font-bold text-success">
+                        +{simResult.estimated_posture_delta} pts
+                      </div>
+                      <div className="text-[11px] text-muted-foreground">
+                        {simResult.estimated_posture_delta > 0
+                          ? "Modeled architectural & security posture improvement based on mitigating downstream reachability of security findings."
+                          : "No measurable security posture delta was detected from the current graph topology for this component."}
+                      </div>
+                    </div>
+
+                    {/* Topology & Reachability Evaluation (STEPS 14 & 15) */}
+                    <div className="grid grid-cols-3 gap-2 text-xs">
+                      <div className="p-2.5 rounded-lg bg-background/60 border border-border/40 text-center">
+                        <div className="text-[10px] text-muted-foreground">Direct Callers</div>
+                        <div className="text-base font-bold text-foreground mt-0.5">
+                          {simResult.direct_dependents_count ?? 0}
+                        </div>
+                      </div>
+                      <div className="p-2.5 rounded-lg bg-background/60 border border-border/40 text-center">
+                        <div className="text-[10px] text-muted-foreground">Reachable Closure</div>
+                        <div className="text-base font-bold text-cyan-400 mt-0.5">
+                          {simResult.affected_components_count}
+                        </div>
+                      </div>
+                      <div className="p-2.5 rounded-lg bg-background/60 border border-border/40 text-center">
+                        <div className="text-[10px] text-muted-foreground">Max Depth</div>
+                        <div className="text-base font-bold text-foreground mt-0.5">
+                          {simResult.max_impact_depth ?? 0} hops
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Security Correlation Detail (STEP 17) */}
+                    <div className="p-3 rounded-xl bg-background/50 border border-border/40 space-y-2 text-xs">
+                      <div className="font-semibold text-foreground text-[11px] uppercase tracking-wider">
+                        Security Correlation
+                      </div>
+
+                      {/* Strengthened Controls */}
+                      <div className="space-y-1">
+                        <span className="text-muted-foreground text-[11px]">Strengthened Controls:</span>
+                        {simResult.strengthened_controls.length > 0 ? (
+                          <div className="flex flex-wrap gap-1.5">
+                            {simResult.strengthened_controls.map((ctrl, i) => (
+                              <div
+                                key={i}
+                                className="px-2 py-0.5 rounded bg-background border border-border/60 text-[10px] text-foreground flex items-center gap-1"
+                              >
+                                <span>{ctrl.control_name}</span>
+                                {ctrl.scope && <span className="text-muted-foreground font-mono">({ctrl.scope})</span>}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-[11px] text-muted-foreground italic">
+                            Security impact: No linked security controls affected in this simulation.
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Mitigated Scenarios */}
+                      <div className="space-y-1 pt-1 border-t border-border/30">
+                        <span className="text-muted-foreground text-[11px]">Mitigated Risk Scenarios:</span>
+                        {simResult.mitigated_risk_scenarios.length > 0 ? (
+                          <div className="flex flex-wrap gap-1.5">
+                            {simResult.mitigated_risk_scenarios.map((sc, i) => (
+                              <div
+                                key={i}
+                                className="px-2 py-0.5 rounded bg-background border border-border/60 text-[10px] text-foreground flex items-center gap-1"
+                              >
+                                <span>{sc.title}</span>
+                                {sc.severity && <Badge tone="danger" className="text-[8px] py-0 px-1">{sc.severity}</Badge>}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-[11px] text-muted-foreground italic">
+                            Security impact: No linked risk scenarios affected in this simulation.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Disclaimer Footer (STEP 16) */}
+                    <div className="text-[10px] text-muted-foreground italic border-t border-border/40 pt-2">
+                      {simResult.disclaimer}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </CardContent>
         </Card>

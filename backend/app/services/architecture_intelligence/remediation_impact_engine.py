@@ -28,6 +28,8 @@ class RemediationImpactReport:
     mitigated_risk_scenarios: List[Dict[str, Any]]
     remaining_hotspot_status: str
     disclaimer: str
+    direct_dependents_count: int = 0
+    max_impact_depth: int = 0
 
 
 class RemediationImpactEngine:
@@ -73,9 +75,24 @@ class RemediationImpactEngine:
         est_delta = min(25.0, round(est_delta, 1))
 
         strengthened = [
-            {"control_name": c.get("control_name") or c.get("control_type"), "scope": c.get("scope")}
+            {
+                "control_name": c.get("control_name") or c.get("control_type") or "Security Control",
+                "scope": c.get("scope", ""),
+                "state": c.get("state", "PASS"),
+            }
             for c in blast.affected_controls
         ]
+
+        formatted_scenarios = []
+        for sc in mitigated_scenarios[:5]:
+            if isinstance(sc, dict):
+                formatted_scenarios.append({
+                    "scenario_id": sc.get("id") or sc.get("scenario_id", ""),
+                    "title": sc.get("title") or sc.get("name") or "Risk Scenario",
+                    "severity": sc.get("severity", "MEDIUM"),
+                })
+            else:
+                formatted_scenarios.append({"title": str(sc)})
 
         return RemediationImpactReport(
             target_component_id=component_id,
@@ -86,9 +103,11 @@ class RemediationImpactEngine:
             affected_components_count=blast.transitive_dependents_count,
             affected_components=blast.transitive_dependents[:10],
             strengthened_controls=strengthened,
-            mitigated_risk_scenarios=mitigated_scenarios[:5],
+            mitigated_risk_scenarios=formatted_scenarios,
             remaining_hotspot_status="HOTSPOT_RESOLVED" if est_delta >= 8.0 else "HOTSPOT_ATTENUATED",
             disclaimer="ESTIMATE: Modeled architectural improvement based on graph reachability. Not an authoritative posture measurement until confirmed by a fresh scan.",
+            direct_dependents_count=blast.direct_dependents_count,
+            max_impact_depth=blast.max_impact_depth,
         )
 
 

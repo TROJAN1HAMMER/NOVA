@@ -47,10 +47,14 @@ class MemoryService:
         messages in PostgreSQL, strictly capped at the most recent max_turns
         (2 * max_turns messages), leaving older messages safely in persistent history.
         """
+        from sqlalchemy import case
         result = await db.execute(
             select(ChatMessage)
             .where(ChatMessage.session_id == session_id)
-            .order_by(ChatMessage.created_at.desc())
+            .order_by(
+                ChatMessage.created_at.desc(),
+                case((ChatMessage.role == "assistant", 1), else_=0).desc()
+            )
             .limit(max_turns * 2)
         )
         recent_messages = list(reversed(result.scalars().all()))
@@ -87,11 +91,18 @@ class MemoryService:
         if not session:
             return
 
-        # Auto-update session title from first user query
-        if session.title == "New Chat":
-            session.title = user_message[:30] + ("..." if len(user_message) > 30 else "")
+        import time
+        from datetime import datetime, timezone, timedelta
+        if not hasattr(self, "_last_turn_ts"):
+            self._last_turn_ts = 0.0
 
-        user_msg = ChatMessage(session_id=session.id, role="user", content=user_message)
+        current_time = time.time()
+        if current_time <= self._last_turn_ts:
+            current_time = self._last_turn_ts + 0.002
+        self._last_turn_ts = current_time
+
+        turn_dt = datetime.fromtimestamp(current_time, tz=timezone.utc)
+        user_msg = ChatMessage(session_id=session.id, role="user", content=user_message, created_at=turn_dt)
         asst_msg = ChatMessage(
             session_id=session.id,
             role="assistant",
@@ -101,6 +112,7 @@ class MemoryService:
             calibrated_trust_score=calibrated_trust_score,
             reasoning_trace=reasoning_trace or {},
             consensus_matrix=consensus_matrix or {},
+            created_at=turn_dt + timedelta(microseconds=500),
         )
         db.add_all([user_msg, asst_msg])
         await db.commit()
@@ -246,6 +258,24 @@ class MemoryService:
         )
         draft_rules = draft_faq_res.scalar_one()
 
+        # Truthful Vector Memory Health telemetry
+        from sqlalchemy import text
+        db_healthy = True
+        vector_healthy = True
+        try:
+            await db.execute(text("SELECT 1"))
+        except Exception:
+            db_healthy = False
+
+        try:
+            vec_check = await db.execute(text("SELECT 1 FROM pg_extension WHERE extname = 'vector'"))
+            if not vec_check.scalar_one_or_none():
+                vector_healthy = False
+        except Exception:
+            vector_healthy = False
+
+        health_status = "ONLINE" if (db_healthy and vector_healthy) else "DEGRADED"
+
         # Compile recent entries across persistent memory layers
         recent_entries = []
         for s in user_sessions[:5]:
@@ -259,6 +289,12 @@ class MemoryService:
 
         return {
             "total_entries": total_turns + vector_count + active_rules,
+            "health": {
+                "status": health_status,
+                "database": "ready" if db_healthy else "error",
+                "vector_engine": "ready" if vector_healthy else "error",
+                "storage_engine": "PostgreSQL 16 + pgvector",
+            },
             "layers": {
                 "short_term": {
                     "layer_id": "short_term",
@@ -271,7 +307,7 @@ class MemoryService:
                     "storage": "PostgreSQL (chat_messages, chat_sessions)",
                     "persistence": "persistent",
                     "scope": "User session (isolated)",
-                    "status": f"Active ({latest_turn_count}/10 turns)",
+                    "status": f"Active ({latest_turn_count}/10 turns)" if latest_turn_count > 0 else "0 / 10 Turns",
                     "last_updated": user_sessions[0].updated_at.isoformat() if user_sessions and user_sessions[0].updated_at else (user_sessions[0].created_at.isoformat() if user_sessions else None)
                 },
                 "long_term": {
@@ -283,7 +319,7 @@ class MemoryService:
                     "storage": "PostgreSQL (pgvector 384-dim, context_summary)",
                     "persistence": "persistent",
                     "scope": "Enterprise & Session knowledge",
-                    "status": "Compressed & Indexed",
+                    "status": f"{compressed_count} Compressed Contexts" if compressed_count > 0 else "No compressed summaries",
                     "last_updated": None
                 },
                 "preferences": {
@@ -307,7 +343,7 @@ class MemoryService:
                     "storage": "PostgreSQL (reasoning_trace, security_intel_scans)",
                     "persistence": "persistent",
                     "scope": "Execution workflow context",
-                    "status": "Verified Checkpoints" if checkpoint_count > 0 else "Idle",
+                    "status": f"{checkpoint_count} Checkpoints" if checkpoint_count > 0 else "Idle",
                     "last_updated": None
                 },
                 "organizational": {
@@ -319,12 +355,46 @@ class MemoryService:
                     "storage": "PostgreSQL (faq_rules)",
                     "persistence": "persistent",
                     "scope": "Enterprise Stage 0 policy boundary",
-                    "status": f"Active ({active_rules} Rules, 0ms Match)",
+                    "status": f"Active ({active_rules} Verified Axioms)",
                     "last_updated": None
                 }
             },
             "recent_entries": recent_entries
         }
+
+    async def reset_session_turns(
+        self, db: AsyncSession, user_id: uuid.UUID, session_id: Optional[uuid.UUID] = None
+    ) -> dict:
+        """
+        Clears conversational turns for an active session without deleting the session
+        or affecting other sessions, documents, or organizational axioms.
+        """
+        from sqlalchemy import delete
+        if session_id:
+            sess_res = await db.execute(
+                select(ChatSession).where(ChatSession.id == session_id, ChatSession.user_id == user_id)
+            )
+            session = sess_res.scalar_one_or_none()
+        else:
+            sess_res = await db.execute(
+                select(ChatSession).where(ChatSession.user_id == user_id).order_by(ChatSession.updated_at.desc()).limit(1)
+            )
+            session = sess_res.scalar_one_or_none()
+
+        if not session:
+            return {"status": "error", "message": "Active session not found or unauthorized."}
+
+        await db.execute(delete(ChatMessage).where(ChatMessage.session_id == session.id))
+        session.title = "New Chat"
+        session.context_summary = None
+        session.active_entities = {}
+        await db.commit()
+        return {
+            "status": "success",
+            "message": f"Active session '{session.id}' conversational turn buffer reset to 0.",
+            "session_id": str(session.id),
+        }
+
 
     # ── User Preferences (Layer 3) ──────────────────────────────────────────
 
@@ -389,66 +459,86 @@ class MemoryService:
 
     # ── Memory Layer Items Inspection (Provenance + Lifecycle) ────────────────
 
-    async def get_layer_items(self, db: AsyncSession, user_id: uuid.UUID, layer_id: str) -> list[dict]:
+    async def get_layer_items(
+        self, db: AsyncSession, user_id: uuid.UUID, layer_id: str, session_id: Optional[uuid.UUID] = None
+    ) -> list[dict]:
         """
         Inspects real records for a given layer.
         Returns provenance, lifecycle status, 'why' explanation, and ownership scope.
         Strictly isolates user-scoped records.
         """
         from app.models.faq_rule import FAQRule
-        from app.models.knowledge import KnowledgeChunk, KnowledgeDocument
         from app.models.security_intelligence import SecurityIntelScan
         from app.models.user import User
 
         items = []
 
         if layer_id in ("short_term", "layer_1", "1"):
-            # Layer 1: Short-term turns across user's sessions
-            res = await db.execute(
-                select(ChatSession)
-                .where(ChatSession.user_id == user_id)
-                .order_by(ChatSession.updated_at.desc())
-            )
-            sessions = res.scalars().all()
-            for s in sessions:
-                # Fetch recent messages
+            # Layer 1: Short-term turns for user's active session
+            session = None
+            if session_id:
+                sess_res = await db.execute(
+                    select(ChatSession).where(ChatSession.id == session_id, ChatSession.user_id == user_id)
+                )
+                session = sess_res.scalar_one_or_none()
+            else:
+                sess_res = await db.execute(
+                    select(ChatSession)
+                    .where(ChatSession.user_id == user_id)
+                    .order_by(ChatSession.updated_at.desc(), ChatSession.created_at.desc())
+                    .limit(1)
+                )
+                session = sess_res.scalar_one_or_none()
+
+            if session:
+                from sqlalchemy import case
                 msg_res = await db.execute(
                     select(ChatMessage)
-                    .where(ChatMessage.session_id == s.id)
-                    .order_by(ChatMessage.created_at.desc())
-                    .limit(10)
+                    .where(ChatMessage.session_id == session.id)
+                    .order_by(
+                        ChatMessage.created_at.desc(),
+                        case((ChatMessage.role == "assistant", 1), else_=0).desc()
+                    )
                 )
-                msgs = list(reversed(msg_res.scalars().all()))
-                turn_count = len(msgs) // 2
-                lifecycle = "ACTIVE" if turn_count <= 10 else "STALE"
-                preview = f"{turn_count} turns in sliding window ({len(msgs)} messages)"
-                if msgs:
-                    last_user_msg = next((m for m in reversed(msgs) if m.role == "user"), None)
-                    if last_user_msg:
-                        preview = f"Latest query: \"{last_user_msg.content[:80]}\" ({turn_count}/10 turns)"
+                msgs = list(msg_res.scalars().all())
+                total_msgs = len(msgs)
 
-                items.append({
-                    "id": str(s.id),
-                    "layer": "Layer 1: Short-Term Conversational Memory",
-                    "title": s.title,
-                    "content": preview,
-                    "provenance": {
-                        "source_type": "user_chat_session",
-                        "source_id": str(s.id),
-                        "origin": f"Chat session '{s.title}' (active 10-turn sliding buffer)",
-                        "owner_scope": f"User {user_id}",
-                        "verification_state": "VERIFIED_ACTIVE"
-                    },
-                    "lifecycle": lifecycle,
-                    "why_remembered": f"NOVA maintains the active 10-turn conversation sliding window for session '{s.title}' to maintain conversational continuity during user interactions.",
-                    "can_delete": True,
-                    "created_at": s.created_at.isoformat() if s.created_at else None,
-                    "updated_at": s.updated_at.isoformat() if s.updated_at else None,
-                })
+                for idx, m in enumerate(msgs):
+                    in_sliding_window = idx < 20
+                    turn_num = (total_msgs - idx + 1) // 2
+                    lifecycle = "ACTIVE" if in_sliding_window else "ARCHIVED"
+                    preview = m.content[:160] + "..." if len(m.content) > 160 else m.content
+
+                    items.append({
+                        "id": str(m.id),
+                        "layer": "Layer 1: Short-Term Conversational Memory",
+                        "title": f"Turn {turn_num}: {m.role.capitalize()}",
+                        "content": preview,
+                        "role": m.role,
+                        "turn_number": turn_num,
+                        "in_sliding_window": in_sliding_window,
+                        "session_id": str(session.id),
+                        "provenance": {
+                            "source_type": "user_chat_session",
+                            "source_id": str(m.id),
+                            "session_id": str(session.id),
+                            "origin": f"Chat session '{session.title}' ({'Inside' if in_sliding_window else 'Archived beyond'} 10-turn sliding buffer)",
+                            "owner_scope": f"User {user_id}",
+                            "verification_state": "IN_SLIDING_WINDOW" if in_sliding_window else "ARCHIVED_POSTGRESQL"
+                        },
+                        "lifecycle": lifecycle,
+                        "why_remembered": (
+                            f"NOVA maintains this message in PostgreSQL inside the active 10-turn sliding window for session '{session.title}' to provide immediate multi-turn conversational context."
+                            if in_sliding_window
+                            else f"This message is preserved in persistent PostgreSQL history beyond the 10-turn sliding window to maintain complete auditability and allow long-term semantic summarization."
+                        ),
+                        "can_delete": True,
+                        "created_at": m.created_at.isoformat() if m.created_at else None,
+                        "updated_at": None,
+                    })
 
         elif layer_id in ("long_term", "layer_2", "2"):
-            # Layer 2: Summaries & semantic vectors
-            # A. User sessions with compressed summaries
+            # Layer 2: Long-Term Semantic Memory (Compressed conversation summaries)
             res = await db.execute(
                 select(ChatSession)
                 .where(ChatSession.user_id == user_id, ChatSession.context_summary.isnot(None))
@@ -464,42 +554,16 @@ class MemoryService:
                     "provenance": {
                         "source_type": "session_semantic_compression",
                         "source_id": str(s.id),
+                        "session_id": str(s.id),
                         "origin": f"Conversation compression worker for session '{s.title}'",
                         "owner_scope": f"User {user_id}",
-                        "verification_state": "SYNTHESIZED"
+                        "verification_state": "SYNTHESIZED_384DIM"
                     },
                     "lifecycle": "ACTIVE",
                     "why_remembered": f"NOVA synthesized semantic highlights from older conversational turns in session '{s.title}' so long-term context is preserved without bloating the short-term window.",
                     "can_delete": True,
                     "created_at": s.created_at.isoformat() if s.created_at else None,
                     "updated_at": s.updated_at.isoformat() if s.updated_at else None,
-                })
-
-            # B. Knowledge chunks with pgvector embeddings
-            chunk_res = await db.execute(
-                select(KnowledgeChunk, KnowledgeDocument.filename)
-                .join(KnowledgeDocument, KnowledgeChunk.document_id == KnowledgeDocument.id)
-                .order_by(KnowledgeChunk.created_at.desc())
-                .limit(10)
-            )
-            for chunk, filename in chunk_res.all():
-                items.append({
-                    "id": str(chunk.id),
-                    "layer": "Layer 2: Long-Term Semantic Memory",
-                    "title": f"Vector Embedding Chunk: {filename}",
-                    "content": chunk.content[:200] + "..." if len(chunk.content) > 200 else chunk.content,
-                    "provenance": {
-                        "source_type": "knowledge_chunk_embedding",
-                        "source_id": str(chunk.id),
-                        "origin": f"Knowledge document '{filename}' (Section: {chunk.heading or chunk.section_path or 'Standard Chunk'})",
-                        "owner_scope": "Enterprise Knowledge Base",
-                        "verification_state": "INDEXED_384DIM"
-                    },
-                    "lifecycle": "ACTIVE",
-                    "why_remembered": f"Derived from enterprise document '{filename}'. Encoded into 384-dimensional FastEmbed vector space in PostgreSQL pgvector for semantic retrieval.",
-                    "can_delete": False,  # Governed by document deletion
-                    "created_at": chunk.created_at.isoformat() if chunk.created_at else None,
-                    "updated_at": chunk.updated_at.isoformat() if chunk.updated_at else None,
                 })
 
         elif layer_id in ("preferences", "layer_3", "3"):
@@ -543,7 +607,7 @@ class MemoryService:
                     select(ChatMessage)
                     .where(ChatMessage.session_id == s.id, ChatMessage.role == "assistant")
                     .order_by(ChatMessage.created_at.desc())
-                    .limit(3)
+                    .limit(5)
                 )
                 for m in msg_res.scalars().all():
                     if m.reasoning_trace or m.calibrated_trust_score is not None:
@@ -557,6 +621,7 @@ class MemoryService:
                             "provenance": {
                                 "source_type": "reasoning_pipeline_checkpoint",
                                 "source_id": str(m.id),
+                                "session_id": str(s.id),
                                 "origin": f"Assistant reasoning pipeline turn in session '{s.title}'",
                                 "owner_scope": f"User {user_id}",
                                 "verification_state": "CALIBRATED_CHECKPOINT"
@@ -592,7 +657,7 @@ class MemoryService:
                     },
                     "lifecycle": lifecycle,
                     "why_remembered": f"Represents an asynchronous multi-step code intelligence scanning task. Checkpoint state allows tracking execution progress and temporal posture evolution.",
-                    "can_delete": False,  # Security scan jobs governed by security policies
+                    "can_delete": False,
                     "created_at": scan.created_at.isoformat() if scan.created_at else None,
                     "updated_at": scan.updated_at.isoformat() if scan.updated_at else None,
                 })
@@ -600,16 +665,15 @@ class MemoryService:
         elif layer_id in ("organizational", "layer_5", "5"):
             # Layer 5: Stage 0 Axiom Rules and Gap Candidates
             rule_res = await db.execute(
-                select(FAQRule).order_by(FAQRule.is_draft.asc(), FAQRule.created_at.desc()).limit(15)
+                select(FAQRule).order_by(FAQRule.is_draft.asc(), FAQRule.created_at.desc()).limit(20)
             )
             rules = rule_res.scalars().all()
             for r in rules:
                 lifecycle = "NEW" if r.is_draft else ("ACTIVE" if r.is_active else "ARCHIVED")
-                status_text = "Draft Gap Candidate (Pending Promotion)" if r.is_draft else "Active Stage 0 Axiom"
                 items.append({
                     "id": str(r.id),
                     "layer": "Layer 5: Organizational Axiom Memory",
-                    "title": f"Axiom Rule: \"{r.keyword}\"",
+                    "title": f"Axiom Rule: \"{r.keyword}\"" if not r.is_draft else f"Draft Gap Candidate: \"{r.keyword}\"",
                     "content": r.response[:200] + "..." if len(r.response) > 200 else r.response,
                     "provenance": {
                         "source_type": "organizational_faq_rule",
@@ -619,7 +683,11 @@ class MemoryService:
                         "verification_state": "PROMOTED_STAGE_0" if not r.is_draft else "UNVERIFIED_DRAFT_GAP"
                     },
                     "lifecycle": lifecycle,
-                    "why_remembered": f"High-frequency verified organizational axiom. When queries contain '{r.keyword}', NOVA serves this authoritative response in <1ms without vector retrieval hallucination.",
+                    "why_remembered": (
+                        f"High-frequency verified organizational axiom. When queries contain '{r.keyword}', NOVA serves this authoritative response in <1ms without vector retrieval hallucination."
+                        if not r.is_draft
+                        else f"Knowledge gap candidate identified from user query clusters, pending domain expert verification before promotion to Stage 0."
+                    ),
                     "can_delete": True,
                     "created_at": r.created_at.isoformat() if r.created_at else None,
                     "updated_at": r.updated_at.isoformat() if r.updated_at else None,
@@ -634,30 +702,43 @@ class MemoryService:
     ) -> dict:
         """
         Safely forgets/deletes a memory item while enforcing strict isolation:
-        - Layer 1: Deletes session or clears messages without touching other users.
+        - Layer 1: Deletes individual message or clears session without touching other users.
         - Layer 2: Clears session context summary without deleting source documents.
         - Layer 3: Resets individual preference to default.
         - Layer 4: Clears reasoning trace from specified message.
-        - Layer 5: Deletes custom axiom rule (if authorized).
+        - Layer 5: Deletes axiom rule only if authorized (RBAC FAQ_WRITE).
         Never deletes unrelated conversations, source documents, or security findings.
         """
         from app.models.faq_rule import FAQRule
+        from app.models.user import User
 
         if layer_id in ("short_term", "layer_1", "1"):
-            # Delete user's session
             try:
-                sess_uuid = uuid.UUID(item_id)
+                target_uuid = uuid.UUID(item_id)
+                # 1. Check if it is a session owned by user_id
                 res = await db.execute(
-                    select(ChatSession).where(ChatSession.id == sess_uuid, ChatSession.user_id == user_id)
+                    select(ChatSession).where(ChatSession.id == target_uuid, ChatSession.user_id == user_id)
                 )
                 session = res.scalar_one_or_none()
                 if session:
                     await db.delete(session)
                     await db.commit()
                     return {"status": "success", "message": f"Short-term session '{session.title}' safely removed."}
+
+                # 2. Check if it is an individual message in a session owned by user_id
+                msg_res = await db.execute(
+                    select(ChatMessage)
+                    .join(ChatSession, ChatMessage.session_id == ChatSession.id)
+                    .where(ChatMessage.id == target_uuid, ChatSession.user_id == user_id)
+                )
+                msg = msg_res.scalar_one_or_none()
+                if msg:
+                    await db.delete(msg)
+                    await db.commit()
+                    return {"status": "success", "message": "Conversational turn message safely forgotten."}
             except ValueError:
                 pass
-            return {"status": "error", "message": "Session not found or unauthorized."}
+            return {"status": "error", "message": "Session or message not found or unauthorized."}
 
         elif layer_id in ("long_term", "layer_2", "2"):
             if item_id.startswith("summary-"):
@@ -713,6 +794,15 @@ class MemoryService:
             return {"status": "error", "message": "Execution checkpoint not found or read-only."}
 
         elif layer_id in ("organizational", "layer_5", "5"):
+            # Enforce RBAC: user must have FAQ_WRITE permission
+            user_res = await db.execute(select(User).where(User.id == user_id))
+            cur_user = user_res.scalar_one_or_none()
+            from app.auth.permissions import has_permission, Permission
+            if not cur_user or not has_permission(cur_user.role, Permission.FAQ_WRITE):
+                return {
+                    "status": "error",
+                    "message": "Permission denied: Only authorized administrators or knowledge analysts can modify organizational Stage 0 axioms."
+                }
             try:
                 rule_uuid = uuid.UUID(item_id)
                 res = await db.execute(select(FAQRule).where(FAQRule.id == rule_uuid))
