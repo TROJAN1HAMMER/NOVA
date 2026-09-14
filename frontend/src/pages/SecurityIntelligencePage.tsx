@@ -842,8 +842,21 @@ export default function SecurityIntelligencePage() {
 
               {/* Findings List */}
               {filteredAssessments.length === 0 ? (
-                <div className="p-8 text-center text-sm text-muted-foreground border border-dashed border-border/60 rounded-lg">
-                  No security findings matched the selected filters.
+                <div className="p-8 text-center text-sm text-muted-foreground border border-dashed border-border/60 rounded-lg space-y-2">
+                  {assessments.length === 0 ? (
+                    <>
+                      <div className="flex items-center justify-center gap-2 text-emerald-400 font-semibold text-base">
+                        <ShieldCheck className="size-5" />
+                        <span>No Security Vulnerabilities Detected</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground max-w-md mx-auto">
+                        AST static analysis identified 0 security vulnerabilities in <strong>{currentScan?.project_name || "this repository"}</strong>.
+                        Explore the <strong>Discovered Assets ({assets.length})</strong>, <strong>Security Context Graph</strong>, or <strong>Controls & Compliance ({controls.length})</strong> tabs above to view discovered architecture and evaluated controls.
+                      </p>
+                    </>
+                  ) : (
+                    <span>No security findings matched the selected filters.</span>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-3">

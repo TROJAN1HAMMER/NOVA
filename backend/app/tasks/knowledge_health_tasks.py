@@ -117,7 +117,8 @@ def memory_compression_sweep_task() -> None:
 
 
 async def _run_memory_compression_sweep() -> None:
+    from app.services.assistant.memory_service import memory_service
     async with AsyncSessionLocal() as db:
         logger.info("memory_compression.starting")
-        # TODO: call memory_service.compress_old_entries(db)
-        logger.info("memory_compression.complete")
+        compressed_count = await memory_service.compress_old_entries(db)
+        logger.info("memory_compression.complete", compressed_sessions=compressed_count)

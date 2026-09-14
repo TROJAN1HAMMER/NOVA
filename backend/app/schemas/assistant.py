@@ -17,6 +17,7 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
+    session_id: str | None = None
     # Client-managed conversation history (see assistant_service.py's
     # module docstring for why this isn't persisted server-side in this
     # milestone) — only the most recent

@@ -25,7 +25,7 @@ import datetime
 import uuid
 import json
 import structlog
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, func
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
 from app.config import get_settings
@@ -45,17 +45,24 @@ from app.models.report import Report
 from app.models.system_setting import SystemSetting
 from app.models.security_intelligence import (
     SecurityIntelAsset, SecurityIntelObservation, SecurityIntelControl,
-    SecurityIntelRiskScenario, SecurityIntelAssessment, SecurityIntelPostureSnapshot
+    SecurityIntelRiskScenario, SecurityIntelAssessment, SecurityIntelPostureSnapshot,
+    SecurityIntelScan
 )
 
 logger = structlog.get_logger(__name__)
 
-async def seed_all():
+async def seed_all(init_only: bool = False, force: bool = False):
     settings = get_settings()
     engine = create_async_engine(settings.database_url, echo=False)
     AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
     async with AsyncSessionLocal() as session:
+        if init_only and not force:
+            res_user_cnt = await session.execute(select(func.count(User.id)))
+            user_cnt = res_user_cnt.scalar_one()
+            if user_cnt > 0:
+                print("[NOVA] Database already contains persistent application records. Initial seed skipped.")
+                return
         print("=================================================================")
         print("🚀 NOVA — POPULATING FULL PLATFORM DATA FOR ALL SCREENS")
         print("=================================================================")
@@ -114,11 +121,8 @@ async def seed_all():
                 await session.flush()
                 print(f"  + Created User: {u['email']} [{u['role'].value}]")
             else:
-                user.hashed_password = hash_password(u["password"])
-                user.role = u["role"]
-                user.full_name = u["full_name"]
-                user.is_active = True
-                print(f"  * Updated User: {u['email']} [{u['role'].value}]")
+                # Idempotent: Preserve existing user data and credentials untouched
+                print(f"  * Existing User Preserved: {u['email']} [{user.role.value}]")
             user_map[u["email"]] = user
 
         admin_user = user_map["admin@nova.ai"]
@@ -727,21 +731,25 @@ async def seed_all():
             }
         ]
 
-        for ae in audit_entries:
-            audit = AuditLog(
-                user_id=ae["user_id"],
-                user_email=ae["user_email"],
-                action=ae["action"],
-                resource_type=ae["resource_type"],
-                resource_id=ae["resource_id"],
-                status=ae["status"],
-                ip_address=ae["ip_address"],
-                user_agent=ae["user_agent"],
-                details=ae["details"],
-                created_at=ae["created_at"]
-            )
-            session.add(audit)
-        print(f"  + Seeded {len(audit_entries)} Audit Log Records")
+        res_audit = await session.execute(select(func.count(AuditLog.id)))
+        if res_audit.scalar_one() == 0:
+            for ae in audit_entries:
+                audit = AuditLog(
+                    user_id=ae["user_id"],
+                    user_email=ae["user_email"],
+                    action=ae["action"],
+                    resource_type=ae["resource_type"],
+                    resource_id=ae["resource_id"],
+                    status=ae["status"],
+                    ip_address=ae["ip_address"],
+                    user_agent=ae["user_agent"],
+                    details=ae["details"],
+                    created_at=ae["created_at"]
+                )
+                session.add(audit)
+            print(f"  + Seeded {len(audit_entries)} Audit Log Records")
+        else:
+            print(f"  * Audit log records already exist (preserved)")
 
         # -------------------------------------------------------------
         # 8. Search Analytics Telemetry & User Feedback Entries
@@ -795,45 +803,37 @@ async def seed_all():
             }
         ]
 
-        for tl in telemetry_logs:
-            s_log = SearchAnalyticsLog(
-                feature=tl["feature"],
-                query=tl["query"],
-                result_count=tl["result_count"],
-                top_score=tl["top_score"],
-                fallback_triggered=tl["fallback_triggered"],
-                latency_ms=tl["latency_ms"],
-                user_id=tl["user_id"]
-            )
-            session.add(s_log)
+        res_tel = await session.execute(select(func.count(SearchAnalyticsLog.id)))
+        if res_tel.scalar_one() == 0:
+            for tl in telemetry_logs:
+                s_log = SearchAnalyticsLog(
+                    feature=tl["feature"],
+                    query=tl["query"],
+                    result_count=tl["result_count"],
+                    top_score=tl["top_score"],
+                    fallback_triggered=tl["fallback_triggered"],
+                    latency_ms=tl["latency_ms"],
+                    user_id=tl["user_id"]
+                )
+                session.add(s_log)
+            print(f"  + Seeded {len(telemetry_logs)} Telemetry Logs")
+        else:
+            print("  * Telemetry logs already exist (preserved)")
 
-        feedbacks = [
-            {
-                "feature": "assistant",
-                "reference_id": "ref-chat-msg-01",
-                "rating": 5,
-                "comment": "Accurately pinpointed the missing RequireRole decorator in code without hallucination.",
-                "user_id": admin_user.id
-            },
-            {
-                "feature": "assistant",
-                "reference_id": "ref-chat-msg-02",
-                "rating": 5,
-                "comment": "Clear explanation of PCI-DSS encryption requirements and exact CWE references.",
-                "user_id": sec_user.id
-            }
-        ]
-
-        for fb in feedbacks:
-            f_entry = Feedback(
-                feature=fb["feature"],
-                reference_id=fb["reference_id"],
-                rating=fb["rating"],
-                comment=fb["comment"],
-                user_id=fb["user_id"]
-            )
-            session.add(f_entry)
-        print(f"  + Seeded {len(telemetry_logs)} Telemetry Logs and {len(feedbacks)} Feedback Ratings")
+        res_fb = await session.execute(select(func.count(Feedback.id)))
+        if res_fb.scalar_one() == 0:
+            for fb in feedbacks:
+                f_entry = Feedback(
+                    feature=fb["feature"],
+                    reference_id=fb["reference_id"],
+                    rating=fb["rating"],
+                    comment=fb["comment"],
+                    user_id=fb["user_id"]
+                )
+                session.add(f_entry)
+            print(f"  + Seeded {len(feedbacks)} Feedback Ratings")
+        else:
+            print("  * Feedback ratings already exist (preserved)")
 
         # -------------------------------------------------------------
         # 9. Security Intelligence Assets, Observations, Controls, Scenarios, Assessments
@@ -995,6 +995,39 @@ async def seed_all():
             session.add_all([obs1, obs2, obs3, c1, c2, c3, sc1, ass1])
             print("  + Seeded 5 Security Assets, 3 AST Observations, 3 Controls, 1 Risk Scenario, and 1 Verified Assessment")
 
+        # Baseline Security Intel Scan
+        res_scans = await session.execute(select(SecurityIntelScan))
+        if not res_scans.scalars().first():
+            demo_scan = SecurityIntelScan(
+                project_name="data/demo_repo",
+                source_type="LOCAL",
+                source_identifier="data/demo_repo",
+                status="COMPLETED",
+                progress=100,
+                stage="COMPLETED",
+                posture_score=85.0,
+                posture_rating="STRONG",
+                delta_score=10.0,
+                trend_direction="IMPROVED",
+                result_summary={
+                    "assets_count": 5,
+                    "observations_count": 3,
+                    "controls_count": 3,
+                    "scenarios_count": 1,
+                    "assessments_count": 1,
+                    "critical_count": 0,
+                    "high_count": 1,
+                    "medium_count": 0,
+                    "low_count": 0,
+                    "verified_fixed_count": 1
+                },
+                started_at=datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=2),
+                completed_at=datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=2),
+                owner_id=admin_user.id
+            )
+            session.add(demo_scan)
+            print("  + Seeded Baseline Completed Security Intelligence Scan")
+
         # -------------------------------------------------------------
         # 10. Temporal Security Posture Snapshots ($S_0 \to S_3$)
         # -------------------------------------------------------------
@@ -1134,4 +1167,9 @@ async def seed_all():
     print("=================================================================")
 
 if __name__ == "__main__":
-    asyncio.run(seed_all())
+    import argparse
+    parser = argparse.ArgumentParser(description="NOVA Master Data Seeder")
+    parser.add_argument("--init-only", action="store_true", help="Skip seeding if persistent data already exists")
+    parser.add_argument("--force", action="store_true", help="Force seeding even if data already exists")
+    args = parser.parse_args()
+    asyncio.run(seed_all(init_only=args.init_only, force=args.force))

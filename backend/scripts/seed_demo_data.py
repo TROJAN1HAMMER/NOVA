@@ -250,22 +250,13 @@ async def run_security_intelligence_pipeline():
     print("Running Security Intelligence Analysis Pipeline...")
 
 async def main():
-    print("=================================================================")
-    print("NOVA — SEEDING ENTERPRISE DEMONSTRATION DATA")
-    print("=================================================================")
-    async with AsyncSessionLocal() as session:
-        await seed_users(session)
-        await seed_knowledge_base(session)
-        await seed_knowledge_graph(session)
-        await seed_posture_history(session)
-        await run_security_intelligence_pipeline()
-
-    res = security_intelligence_orchestrator.run_full_analysis("data/demo_repo")
-    print(f"Security Intelligence Analysis Completed: {res['posture']['posture_score']}/100 ({res['posture']['posture_rating']})")
-
-    print("=================================================================")
-    print("DATA SEEDING COMPLETED SUCCESSFULLY!")
-    print("=================================================================")
+    import argparse
+    from scripts.seed_all_screens_data import seed_all
+    parser = argparse.ArgumentParser(description="NOVA Enterprise Demo Data Seeder")
+    parser.add_argument("--init-only", action="store_true", help="Skip if database already has users")
+    parser.add_argument("--force", action="store_true", help="Force seeding even if data exists")
+    args, _ = parser.parse_known_args()
+    await seed_all(init_only=args.init_only, force=args.force)
 
 if __name__ == "__main__":
     asyncio.run(main())

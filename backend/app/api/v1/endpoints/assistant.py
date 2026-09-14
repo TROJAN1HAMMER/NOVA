@@ -63,6 +63,60 @@ def _sse_pack(data: str, *, event: str | None = None) -> str:
     return f"{prefix}{data_lines}\n\n"
 
 
+@router.get("/assistant/memory/state")
+@router.get("/memory/state")
+async def get_memory_state(
+    current_user: Annotated[User, Depends(require_permission(Permission.KNOWLEDGE_READ))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Retrieve live PostgreSQL persistence state across all 5 memory layers."""
+    return await memory_service.get_memory_state(db, current_user.id)
+
+
+@router.get("/memory/layers/{layer_id}/items")
+async def get_memory_layer_items(
+    layer_id: str,
+    current_user: Annotated[User, Depends(require_permission(Permission.KNOWLEDGE_READ))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Inspect real items, provenance metadata, lifecycle, and 'why' for a memory layer."""
+    return await memory_service.get_layer_items(db, current_user.id, layer_id)
+
+
+@router.get("/memory/preferences")
+async def get_user_memory_preferences(
+    current_user: Annotated[User, Depends(require_permission(Permission.KNOWLEDGE_READ))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Retrieve persistent Layer 3 User Preference memory."""
+    return await memory_service.get_user_preferences(db, current_user.id)
+
+
+@router.put("/memory/preferences")
+async def update_user_memory_preferences(
+    payload: dict,
+    current_user: Annotated[User, Depends(require_permission(Permission.KNOWLEDGE_READ))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Update persistent Layer 3 User Preference memory."""
+    return await memory_service.update_user_preferences(db, current_user.id, payload)
+
+
+@router.delete("/memory/{layer_id}/{item_id}")
+async def forget_memory_item(
+    layer_id: str,
+    item_id: str,
+    current_user: Annotated[User, Depends(require_permission(Permission.KNOWLEDGE_READ))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Safely forget/delete a memory item without deleting underlying source documents or cross-user data."""
+    res = await memory_service.forget_memory(db, current_user.id, layer_id, item_id)
+    if res.get("status") == "error":
+        raise HTTPException(status_code=400, detail=res.get("message", "Could not delete memory item."))
+    return res
+
+
+
 @router.get("/assistant/sessions")
 async def list_sessions(
     current_user: Annotated[User, Depends(require_permission(Permission.KNOWLEDGE_READ))],
@@ -161,6 +215,7 @@ async def chat(
 ):
     request_start = time.monotonic()
     session = await memory_service.get_or_create_session(db, current_user.id, getattr(payload, "session_id", None))
+    reconstructed_history = await memory_service.get_active_sliding_window_context(db, session.id, max_turns=10)
 
     retrieval = await assistant_service.retrieve_and_orchestrate(db, query=payload.message, user_id=current_user.id)
 
@@ -196,7 +251,11 @@ async def chat(
 
         full_response_chunks: list[str] = []
         try:
-            history = [turn.model_dump() for turn in (payload.history or [])]
+            if payload.history:
+                history = [turn.model_dump() for turn in payload.history][-20:]
+            else:
+                # Reconstruct active sliding window (up to 10 turns = 20 messages) from persistent history
+                history = reconstructed_history[-20:]
             for chunk in assistant_service.stream_answer(retrieval, message=payload.message, history=history):
                 full_response_chunks.append(chunk)
                 yield _sse_pack(chunk, event="token")
