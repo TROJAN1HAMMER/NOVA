@@ -54,6 +54,9 @@ class UnifiedEvidenceItem:
             "similarity_score": self.similarity_score,
             "rerank_score": self.rerank_score,
             "provenance": self.provenance,
+            "url": self.provenance.get("url") if isinstance(self.provenance, dict) else None,
+            "domain": self.provenance.get("domain") if isinstance(self.provenance, dict) else None,
+            "published_at": self.provenance.get("published_at") if isinstance(self.provenance, dict) else None,
         }
 
 
@@ -163,12 +166,13 @@ class EvidenceFusionEngine:
         self,
         knowledge_items: List[UnifiedEvidenceItem],
         security_items: List[UnifiedEvidenceItem],
+        external_items: Optional[List[UnifiedEvidenceItem]] = None,
         top_k: int = 5,
     ) -> List[UnifiedEvidenceItem]:
         """
-        Fuses, deduplicates, and ranks combined knowledge and security evidence items.
+        Fuses, deduplicates, and ranks combined knowledge, security, and external web evidence items.
         """
-        combined = knowledge_items + security_items
+        combined = knowledge_items + security_items + (external_items or [])
         if not combined:
             return []
 

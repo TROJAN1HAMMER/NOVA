@@ -15,9 +15,12 @@ SOURCE_RELIABILITY_WEIGHTS: Dict[str, float] = {
     "faq_axiom": 1.0,
     "security_finding": 0.95,
     "official_doc": 0.95,
+    "architecture_component": 0.95,
+    "architecture_hotspot": 0.90,
     "knowledge_doc": 0.85,
     "user_doc": 0.80,
     "web_search": 0.70,
+    "external_web": 0.75,
 }
 
 
@@ -147,12 +150,13 @@ class ConfidenceCalibrator:
         if is_security_query and trust_score < effective_thresh:
             reasons.append("Security query evidence confidence below threshold; preventing unverified vulnerability assertion.")
 
-        # Hard Safety Policy Gate for Critical Evidence Contradiction
+        # Hard Safety Policy Gate for Critical Evidence Contradiction or Low Retrieval Similarity
         has_critical_contradiction = c_vector.get("C_agreement", 1.0) <= 0.20
+        has_low_retrieval = c_vector.get("C_retrieval", 1.0) < 0.35
         if has_critical_contradiction:
             reasons.append("Critical evidence contradiction detected by NLI consensus engine; triggering web search fallback for safety.")
 
-        if trust_score >= effective_thresh and not has_critical_contradiction:
+        if trust_score >= effective_thresh and not has_critical_contradiction and not has_low_retrieval:
             decision = "GENERATE"
             if reasons:
                 decision = "GENERATE_WITH_WARNING"

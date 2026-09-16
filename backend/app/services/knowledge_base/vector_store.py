@@ -97,8 +97,13 @@ async def similarity_search(
     # Hybrid Dense + Text Matching Boost for acronyms / specific codes (e.g. FAPI-03, PCI-DSS)
     terms = []
     if query_text:
+        stopwords = {
+            "the", "and", "for", "that", "this", "with", "from", "are", "was", "were",
+            "who", "what", "where", "when", "how", "why", "which", "whose", "whom",
+            "is", "about", "your", "can", "could", "would", "should", "our"
+        }
         raw_terms = [t.strip("?,.!\"'()") for t in query_text.split()]
-        terms = [t.lower() for t in raw_terms if len(t) > 2]
+        terms = [t.lower() for t in raw_terms if len(t) > 2 and t.lower() not in stopwords]
 
     scored: list[tuple[KnowledgeChunk, float]] = []
     for chunk, dist in rows:
@@ -106,8 +111,8 @@ async def similarity_search(
         if terms:
             content_lower = chunk.content.lower()
             matched_terms = [t for t in terms if t in content_lower]
-            if matched_terms:
-                # Boost match score if query terms occur directly in chunk content
+            if len(matched_terms) >= 2 and len(matched_terms) == len(terms):
+                # Boost match score only if substantive query terms occur directly in chunk content
                 sim = max(sim, 0.85 + min(0.10, len(matched_terms) * 0.05))
         scored.append((chunk, round(sim, 4)))
 

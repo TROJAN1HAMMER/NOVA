@@ -48,6 +48,10 @@ from app.models.security_intelligence import (
     SecurityIntelRiskScenario, SecurityIntelAssessment, SecurityIntelPostureSnapshot,
     SecurityIntelScan
 )
+from app.models.architecture import (
+    ArchitectureSnapshot, ArchitectureComponent, ArchitectureDependency,
+    ArchitectureTraceabilityLink
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -121,8 +125,14 @@ async def seed_all(init_only: bool = False, force: bool = False):
                 await session.flush()
                 print(f"  + Created User: {u['email']} [{u['role'].value}]")
             else:
-                # Idempotent: Preserve existing user data and credentials untouched
-                print(f"  * Existing User Preserved: {u['email']} [{user.role.value}]")
+                # Idempotent: Ensure admin credentials and role are always guaranteed
+                if u["email"] == "admin@nova.ai":
+                    user.role = UserRole.ADMIN
+                    user.is_active = True
+                    user.hashed_password = hash_password(u["password"])
+                    print(f"  * Admin User Verified & Synchronized: {u['email']} [admin] (Password: {u['password']})")
+                else:
+                    print(f"  * Existing User Preserved: {u['email']} [{user.role.value}]")
             user_map[u["email"]] = user
 
         admin_user = user_map["admin@nova.ai"]
@@ -1182,6 +1192,167 @@ async def seed_all(init_only: bool = False, force: bool = False):
                 setting = SystemSetting(key=key, value=val)
                 session.add(setting)
                 print(f"  + Seeded Setting: {key} = {val}")
+
+        # -------------------------------------------------------------
+        # 12. Executive & Compliance Reports
+        # -------------------------------------------------------------
+        print("\n[12/13] Seeding Executive & Compliance Reports for /reports...")
+        res_scan = await session.execute(select(SecurityIntelScan).order_by(SecurityIntelScan.created_at.desc()))
+        latest_scan = res_scan.scalars().first()
+        if latest_scan:
+            scan_uuid = latest_scan.id
+            reports_spec = [
+                {
+                    "report_type": "pdf",
+                    "status": "completed",
+                    "file_path": "backend/reports/nova_executive_audit_report.pdf",
+                    "storage_backend": "local",
+                },
+                {
+                    "report_type": "json",
+                    "status": "completed",
+                    "file_path": "backend/reports/nova_security_findings.json",
+                    "storage_backend": "local",
+                },
+                {
+                    "report_type": "compliance_report",
+                    "status": "completed",
+                    "file_path": "backend/reports/nova_compliance_report.json",
+                    "storage_backend": "local",
+                },
+            ]
+            for rep in reports_spec:
+                res_rep = await session.execute(
+                    select(Report).where(
+                        Report.scan_job_id == scan_uuid,
+                        Report.report_type == rep["report_type"],
+                    )
+                )
+                if not res_rep.scalars().first():
+                    r_obj = Report(
+                        scan_job_id=scan_uuid,
+                        report_type=rep["report_type"],
+                        status=rep["status"],
+                        file_path=rep["file_path"],
+                        storage_backend=rep["storage_backend"],
+                    )
+                    session.add(r_obj)
+                    print(f"  + Seeded Report: {rep['report_type']} for Scan {str(scan_uuid)[:8]}")
+                else:
+                    print(f"  * Report already exists: {rep['report_type']}")
+
+        # -------------------------------------------------------------
+        # 13. Architecture Snapshots & Traceability
+        # -------------------------------------------------------------
+        print("\n[13/13] Seeding Architecture Snapshots for /architecture...")
+        res_arch = await session.execute(select(ArchitectureSnapshot))
+        if not res_arch.scalars().first():
+            arch_snap = ArchitectureSnapshot(
+                scan_id=str(latest_scan.id) if latest_scan else "scan-arch-baseline",
+                project_name="financial-backend-core",
+                target_scope="app",
+                total_components=3,
+                total_dependencies=3,
+                circular_dependency_count=0,
+                avg_instability=0.33,
+                hotspot_count=1,
+                summary_metrics={
+                    "cohesion_avg": 0.91,
+                    "max_fan_in": 6,
+                    "god_candidates": 0
+                },
+                owner_id=admin_user.id
+            )
+            session.add(arch_snap)
+            await session.flush()
+
+            c_auth = ArchitectureComponent(
+                snapshot_id=arch_snap.id,
+                component_id="CMP-AUTH-SERVICE",
+                name="AuthService",
+                component_type="SERVICE",
+                file_path="app/auth/service.py",
+                line_number=25,
+                fan_in=4,
+                fan_out=2,
+                afferent_coupling=4,
+                efferent_coupling=2,
+                instability=0.33,
+                cohesion_score=0.92,
+                cohesion_status="HIGH_COHESION",
+                is_god_candidate=False,
+                is_hotspot=False,
+                blast_radius_count=4
+            )
+            c_tx = ArchitectureComponent(
+                snapshot_id=arch_snap.id,
+                component_id="CMP-TX-CONTROLLER",
+                name="TransactionController",
+                component_type="CONTROLLER",
+                file_path="app/api/v1/endpoints/transactions.py",
+                line_number=40,
+                fan_in=2,
+                fan_out=4,
+                afferent_coupling=2,
+                efferent_coupling=4,
+                instability=0.67,
+                cohesion_score=0.85,
+                cohesion_status="NORMAL",
+                is_god_candidate=False,
+                is_hotspot=True,
+                hotspot_score=0.82,
+                hotspot_reasons=["High efferent coupling", "Critical financial path"],
+                blast_radius_count=6
+            )
+            c_db = ArchitectureComponent(
+                snapshot_id=arch_snap.id,
+                component_id="CMP-DB-SESSION",
+                name="DatabaseSessionManager",
+                component_type="INFRASTRUCTURE",
+                file_path="app/db/session.py",
+                line_number=12,
+                fan_in=6,
+                fan_out=0,
+                afferent_coupling=6,
+                efferent_coupling=0,
+                instability=0.0,
+                cohesion_score=0.95,
+                cohesion_status="HIGH_COHESION",
+                is_god_candidate=False,
+                is_hotspot=False,
+                blast_radius_count=8
+            )
+            session.add_all([c_auth, c_tx, c_db])
+            await session.flush()
+
+            dep1 = ArchitectureDependency(
+                snapshot_id=arch_snap.id,
+                source_component_id=c_tx.component_id,
+                target_component_id=c_auth.component_id,
+                relation_type="SERVICE_CALL",
+                evidence="await auth_service.verify_token(token)",
+                line_number=45
+            )
+            dep2 = ArchitectureDependency(
+                snapshot_id=arch_snap.id,
+                source_component_id=c_tx.component_id,
+                target_component_id=c_db.component_id,
+                relation_type="DATA_ACCESS",
+                evidence="await db.execute(select(Transaction))",
+                line_number=58
+            )
+            dep3 = ArchitectureDependency(
+                snapshot_id=arch_snap.id,
+                source_component_id=c_auth.component_id,
+                target_component_id=c_db.component_id,
+                relation_type="DATA_ACCESS",
+                evidence="await db.execute(select(User))",
+                line_number=32
+            )
+            session.add_all([dep1, dep2, dep3])
+            print("  + Seeded Baseline Architecture Snapshot with 3 Components and 3 Dependencies")
+        else:
+            print("  * Architecture snapshots already exist (preserved)")
 
         await session.commit()
 

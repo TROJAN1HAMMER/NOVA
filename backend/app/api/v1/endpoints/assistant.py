@@ -268,6 +268,15 @@ async def chat(
                             "similarity_score": c.similarity_score,
                             "rerank_score": c.rerank_score,
                             "excerpt": c.excerpt,
+                            "source_type": c.source_type,
+                            "url": getattr(c, "url", None),
+                            "domain": getattr(c, "domain", None),
+                            "published_at": getattr(c, "published_at", None),
+                            "file_path": getattr(c, "file_path", None),
+                            "line_number": getattr(c, "line_number", None),
+                            "severity": getattr(c, "severity", None),
+                            "cwe_id": getattr(c, "cwe_id", None),
+                            "cve": getattr(c, "cve", None),
                         }
                         for c in retrieval.citations
                     ],
@@ -307,6 +316,13 @@ async def chat(
                         "page_number": c.page_number,
                         "section_path": c.section_path,
                         "excerpt": c.excerpt,
+                        "source_type": c.source_type,
+                        "url": getattr(c, "url", None),
+                        "domain": getattr(c, "domain", None),
+                        "published_at": getattr(c, "published_at", None),
+                        "file_path": getattr(c, "file_path", None),
+                        "line_number": getattr(c, "line_number", None),
+                        "severity": getattr(c, "severity", None),
                     }
                     for c in retrieval.citations
                 ],

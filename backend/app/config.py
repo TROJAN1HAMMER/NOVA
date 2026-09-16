@@ -148,6 +148,22 @@ class Settings(BaseSettings):
     # Exa Web Search
     exa_enabled: bool = Field(default=False, env="EXA_ENABLED")
 
+    # Open-Web Evidence Retrieval & Verification Layer
+    web_search_enabled: bool = Field(default=False, env="WEB_SEARCH_ENABLED")
+    web_search_provider: str = Field(default="auto", env="WEB_SEARCH_PROVIDER")
+    tavily_api_key: str = Field(default="", env="TAVILY_API_KEY")
+    serper_api_key: str = Field(default="", env="SERPER_API_KEY")
+    web_search_max_results: int = Field(default=5, env="WEB_SEARCH_MAX_RESULTS")
+    web_search_timeout_seconds: float = Field(default=8.0, env="WEB_SEARCH_TIMEOUT_SECONDS")
+    web_search_preferred_domains: Annotated[list[str], NoDecode] = Field(
+        default=[],
+        env="WEB_SEARCH_PREFERRED_DOMAINS",
+    )
+    web_search_blocked_domains: Annotated[list[str], NoDecode] = Field(
+        default=[],
+        env="WEB_SEARCH_BLOCKED_DOMAINS",
+    )
+
     # NVD API
     nvd_enabled: bool = Field(default=False, env="NVD_ENABLED")
 
@@ -303,6 +319,34 @@ class Settings(BaseSettings):
                 return json.loads(stripped)
             return [addr.strip() for addr in stripped.split(",") if addr.strip()]
         return value
+
+    @field_validator("web_search_preferred_domains", "web_search_blocked_domains", mode="before")
+    @classmethod
+    def _parse_domain_list(cls, value):
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped.startswith("["):
+                import json
+
+                return json.loads(stripped)
+            return [d.strip() for d in stripped.split(",") if d.strip()]
+        return value
+
+    def is_web_search_configured(self) -> bool:
+        """Returns True only if web search is enabled and provider credentials are validly configured."""
+        if not self.web_search_enabled:
+            return False
+        prov = self.web_search_provider.lower().strip()
+        if prov in ("google", "serper"):
+            return bool(self.serper_api_key and self.serper_api_key.strip())
+        if prov == "tavily":
+            return bool(self.tavily_api_key and self.tavily_api_key.strip())
+        if prov == "auto":
+            return bool(
+                (self.serper_api_key and self.serper_api_key.strip())
+                or (self.tavily_api_key and self.tavily_api_key.strip())
+            )
+        return False
 
     @property
     def resolved_celery_broker_url(self) -> str:

@@ -213,6 +213,15 @@ export interface AssistantCitation {
   similarity_score: number;
   rerank_score: number;
   excerpt: string;
+  source_type?: string;
+  url?: string | null;
+  domain?: string | null;
+  published_at?: string | null;
+  file_path?: string | null;
+  line_number?: number | null;
+  severity?: string | null;
+  cwe_id?: string | null;
+  cve?: string | null;
 }
 
 export interface AssistantRetrievalEvent {
